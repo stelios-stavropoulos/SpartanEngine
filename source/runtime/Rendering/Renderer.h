@@ -122,6 +122,7 @@ namespace spartan
         static void DrawPlane(const math::Plane& plane, const Color& color = Color::standard_renderer_lines, float duration_sec = 0.0f);
         static void DrawString(const char* text, const math::Vector2& position_screen_percentage);
         static void DrawIcon(RHI_Texture* icon, const math::Vector2& position_screen_percentage);
+        static void DrawIconAtPosition(RHI_Texture* icon, const math::Vector3& position);
 
 
         // swapchain

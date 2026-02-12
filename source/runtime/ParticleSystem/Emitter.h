@@ -19,42 +19,41 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-//= INCLUDES ===========
-#include "pch.h"
-#include "Component.h"
-#include "AudioSource.h"
-#include "Camera.h"
-#include "Light.h"
-#include "Physics.h"
-#include "Script.h"
-#include "Spline.h"
-#include "Terrain.h"
-#include "Volume.h"
-#include "ParticleSystem.h"
-//======================
+#pragma once
 
-//= NAMESPACES =====
-using namespace std;
-//==================
+//= INCLUDES =================================
+#include "ParticleData.h"
+//============================================
 
 namespace spartan
 {
-    Component::Component(Entity* entity)
+    class EmitterModule;
+    class RHI_Texture;
+
+    class Emitter
     {
-        m_entity_ptr = entity;
-        m_enabled    = true;
-    }
+    public:
+        bool enabled = true;
+        std::string name = "New Emitter";
 
-    template <typename T>
-    ComponentType Component::TypeToEnum() { return ComponentType::Max; }
+        float spawn_rate = 1000.0f;
 
-    template<typename T>
-    inline constexpr void validate_component_type() { static_assert(is_base_of<Component, T>::value, "Provided type does not implement IComponent"); }
+        std::vector<EmitterModule*> initialization_modules;
+        std::vector<EmitterModule*> update_modules;
 
-    #define REGISTER_COMPONENT(T, enumT) template<> ComponentType Component::TypeToEnum<T>() { validate_component_type<T>(); return enumT; }
+        RHI_Texture* particle_texture;
 
-    // auto-generated from SP_COMPONENT_LIST - no manual registration needed
-    #define X(type, str) REGISTER_COMPONENT(type, ComponentType::type)
-    SP_COMPONENT_LIST
-    #undef X
+    public:
+        Emitter();
+        ~Emitter();
+
+        void ChangeSpawnRate(const float new_spawn_rate);
+
+        void InitializeParticles(uint32_t start_index, uint32_t end_index);
+        void Update(const double& delta_time);
+
+    private:
+        ParticleData particle_data;
+        float spawn_accumulator = 0.0f;
+    };
 }

@@ -40,6 +40,17 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "World/Components/Volume.h"
 #include "Rendering/Renderer.h"
 #include "World/Components/Script.h"
+
+#include "../runtime/World/Components/ParticleSystem.h"
+#include "../runtime/ParticleSystem/Emitter.h"
+#include "EmitterViewer.h"
+
+#include "../runtime/ParticleSystem/EmitterModules/EM_AddVelocity.h"
+#include "../runtime/ParticleSystem/EmitterModules/EM_ApplyVelocity.h"
+#include "../runtime/ParticleSystem/EmitterModules/EM_Gravity.h"
+#include "../runtime/ParticleSystem/EmitterModules/EM_SetLifetime.h"
+#include "../runtime/ParticleSystem/EmitterModules/EM_SphereShape.h"
+#include "../runtime/ParticleSystem/EmitterModules/EM_SetColor.h"
 //=======================================
 
 //= NAMESPACES =========
@@ -95,6 +106,7 @@ namespace
         inline ImVec4 accent_volume()     { return ImVec4(0.55f, 0.55f, 0.75f, 1.0f); }
         inline ImVec4 accent_spline()     { return ImVec4(0.30f, 0.75f, 0.70f, 1.0f); }
         inline ImVec4 accent_script()     { return ImVec4(0.60f, 0.70f, 0.50f, 1.0f); }
+        inline ImVec4 accent_particle_system()     { return ImVec4(0.60f, 0.60f, 0.1f, 1.0f); }
 
         // helper to get dimmed version for backgrounds
         inline ImVec4 dimmed(const ImVec4& color, float factor = 0.15f)
@@ -623,6 +635,7 @@ void Properties::OnTickVisible()
             ShowTerrain(entity->GetComponent<Terrain>());
             ShowSpline(entity->GetComponent<Spline>());
             ShowAudioSource(entity->GetComponent<AudioSource>());
+            ShowParticleSystem(entity->GetComponent<ParticleSystem>());
 
             // re-fetch after ShowSpline since clearing a road mesh removes the renderable
             Renderable* renderable = entity->GetComponent<Renderable>();
@@ -1920,6 +1933,253 @@ void Properties::ShowVolume(spartan::Volume* volume) const
     component_end();
 }
 
+void Properties::ShowParticleSystem(spartan::ParticleSystem* particle_system) const
+{
+    if (!particle_system)
+        return;
+
+    if (!component_begin("Particle System", design::accent_particle_system(),particle_system))
+        return;
+
+    ImGui::Separator();
+
+    for (size_t i = 0; i < particle_system->emitters.size();)
+    {
+        Emitter* emitter = particle_system->emitters[i];
+
+        ImGui::PushID(emitter);
+
+        // =========================
+        // Emitter Header
+        // =========================
+        char name_buffer[256]{};
+        strncpy_s(name_buffer, emitter->name.c_str(), sizeof(name_buffer) - 1);
+
+        bool emitter_open = ImGui::TreeNodeEx(
+            "##Emitter",
+            ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen
+        );
+
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 30.0f);
+        if (ImGui::InputText("##EmitterName", name_buffer, sizeof(name_buffer)))
+        {
+            emitter->name = name_buffer;
+        }
+
+        float button_width = 20.0f;
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - button_width);
+        if (ImGui::Button("X"))
+        {
+            delete emitter;
+            particle_system->emitters.erase(
+                particle_system->emitters.begin() + i
+            );
+
+            ImGui::PopID();
+            ImGui::TreePop();
+            ImGui::Separator();
+            continue; // DO NOT increment i
+        }
+
+        if (!emitter_open)
+        {
+            ImGui::PopID();
+            continue;
+        }
+
+        ImGui::Checkbox("Enabled", &emitter->enabled);
+
+        ImGui::DragFloat("Spawn Rate", &emitter->spawn_rate, 0.1f, 0.0f, 30000.0f, "%.1f/s");
+        if (ImGui::IsItemDeactivatedAfterEdit())
+        {
+            emitter->ChangeSpawnRate(emitter->spawn_rate);
+        }
+
+        // ======================================================
+        // Initialization Modules
+        // ======================================================
+        ImGui::PushID("InitModules");
+
+        bool open_init_popup = false;
+        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+        bool init_open = ImGui::CollapsingHeader("Initialization Modules", ImGuiTreeNodeFlags_AllowOverlap);
+
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 90.0f);
+        if (ImGui::Button("+ Add Module"))
+        {
+            ImGui::OpenPopup("AddInitModule");
+        }
+
+        if (ImGui::BeginPopup("AddInitModule"))
+        {
+            for (const auto& name : EmitterViewer::GetAvailableInitializationModules())
+            {
+                if (ImGui::Selectable(name.c_str()))
+                {
+                    EmitterModuleType type = EmitterViewer::StringToType(name);
+
+                    EmitterModule* module = nullptr;
+
+                    switch (type)
+                    {
+                    case EmitterModuleType::SphereShape:
+                        module = new EM_SphereShape();
+                        break;
+                    case EmitterModuleType::SetLifetime:
+                        module = new EM_SetLifetime();
+                        break;
+                    case EmitterModuleType::AddVelocity:
+                        module = new EM_AddVelocity();
+                        break;
+                    case EmitterModuleType::SetColor:
+                        module = new EM_SetColor();
+                        break;
+                    default:
+                        assert(false && "Module not yet implemented!");
+                        break;
+                    }
+                    if (module)
+                        emitter->initialization_modules.push_back(module);
+                }
+            }
+            ImGui::EndPopup();
+        }
+
+        if (init_open)
+        {
+            for (auto it = emitter->initialization_modules.begin(); it != emitter->initialization_modules.end();)
+            {
+                EmitterModule* mod = *it;
+                ImGui::PushID(mod);
+
+                bool mod_open = ImGui::TreeNodeEx(
+                    EmitterViewer::TypeToString(mod->GetType()).c_str(),
+                    ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen
+                );
+
+                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 25.0f);
+                if (ImGui::Button("x"))
+                {
+                    delete mod;
+                    it = emitter->initialization_modules.erase(it);
+                    ImGui::PopID();
+                    if (mod_open) ImGui::TreePop();
+                    continue;
+                }
+
+                if (mod_open)
+                {
+                    EmitterViewer::ShowEmitter(mod);
+                    ImGui::TreePop();
+                }
+
+                ImGui::PopID();
+                ++it;
+            }
+        }
+
+        ImGui::PopID(); // InitModules
+
+        // ======================================================
+        // Update Modules
+        // ======================================================
+        ImGui::PushID("UpdateModules");
+
+        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+        bool update_open = ImGui::CollapsingHeader("Update Modules", ImGuiTreeNodeFlags_AllowOverlap);
+
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 90.0f);
+        if (ImGui::Button("+ Add Module"))
+        {
+            ImGui::OpenPopup("AddUpdateModule");
+        }
+
+        if (ImGui::BeginPopup("AddUpdateModule"))
+        {
+            for (const auto& name : EmitterViewer::GetAvailableUpdateModules())
+            {
+                if (ImGui::Selectable(name.c_str()))
+                {
+                    EmitterModuleType type = EmitterViewer::StringToType(name);
+
+                    EmitterModule* module = nullptr;
+
+                    switch (type)
+                    {
+                    case EmitterModuleType::Gravity:
+                        module = new EM_Gravity();
+                        break;
+                    case EmitterModuleType::AddVelocity:
+                        module = new EM_AddVelocity();
+                        break;
+                    case EmitterModuleType::ApplyVelocity:
+                        module = new EM_ApplyVelocity();
+                        break;
+                    case EmitterModuleType::SetColor:
+                        module = new EM_SetColor();
+                        break;
+                    default:
+                        assert(false && "Module not yet implemented!");
+                        break;
+                    }
+                    if (module)
+                        emitter->update_modules.push_back(module);
+                }
+            }
+            ImGui::EndPopup();
+        }
+
+        if (update_open)
+        {
+            for (auto it = emitter->update_modules.begin(); it != emitter->update_modules.end();)
+            {
+                EmitterModule* mod = *it;
+                ImGui::PushID(mod);
+
+                bool mod_open = ImGui::TreeNodeEx(
+                    EmitterViewer::TypeToString(mod->GetType()).c_str(),
+                    ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen
+                );
+
+                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 25.0f);
+                if (ImGui::Button("x"))
+                {
+                    delete mod;
+                    it = emitter->update_modules.erase(it);
+                    ImGui::PopID();
+                    if (mod_open) ImGui::TreePop();
+                    continue;
+                }
+
+                if (mod_open)
+                {
+                    EmitterViewer::ShowEmitter(mod);
+                    ImGui::TreePop();
+                }
+
+                ImGui::PopID();
+                ++it;
+            }
+        }
+
+        ImGui::PopID(); // UpdateModules
+
+        ImGui::TreePop(); // Emitter
+        ImGui::Separator();
+        ImGui::PopID(); // emitter
+
+        ++i;
+    }
+
+    if (ImGui::Button("Add Emitter", ImVec2(-1, 0)))
+    {
+        particle_system->emitters.push_back(new Emitter());
+    }
+
+    component_end();
+}
+
 void Properties::ShowAddComponentButton() const
 {
     ImGui::Dummy(ImVec2(0, design::spacing_lg));
@@ -2047,6 +2307,11 @@ void Properties::ComponentContextMenu_Add() const
                     entity->AddComponent<AudioSource>();
                 }
                 ImGui::EndMenu();
+            }
+
+            if (ImGui::MenuItem("Particle System"))
+            {
+                entity->AddComponent<ParticleSystem>();
             }
         }
 

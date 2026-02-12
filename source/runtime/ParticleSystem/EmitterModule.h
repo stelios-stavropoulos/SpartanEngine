@@ -19,42 +19,37 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-//= INCLUDES ===========
-#include "pch.h"
-#include "Component.h"
-#include "AudioSource.h"
-#include "Camera.h"
-#include "Light.h"
-#include "Physics.h"
-#include "Script.h"
-#include "Spline.h"
-#include "Terrain.h"
-#include "Volume.h"
-#include "ParticleSystem.h"
-//======================
+#pragma once
 
-//= NAMESPACES =====
-using namespace std;
-//==================
+//= INCLUDES =================================
+#include "ParticlePropertyTypes.h"
+//============================================
 
 namespace spartan
 {
-    Component::Component(Entity* entity)
+
+    enum class EmitterModuleType : uint32_t
     {
-        m_entity_ptr = entity;
-        m_enabled    = true;
-    }
+        Gravity,
+        SphereShape,
+        AddVelocity,
+        ApplyVelocity,
+        SetLifetime,
+        SetColor,
+        Max
+    };
 
-    template <typename T>
-    ComponentType Component::TypeToEnum() { return ComponentType::Max; }
+    struct ParticleData;
 
-    template<typename T>
-    inline constexpr void validate_component_type() { static_assert(is_base_of<Component, T>::value, "Provided type does not implement IComponent"); }
+    class EmitterModule
+    {
+    public:
+        EmitterModule() = default;
+        virtual ~EmitterModule() = default;
 
-    #define REGISTER_COMPONENT(T, enumT) template<> ComponentType Component::TypeToEnum<T>() { validate_component_type<T>(); return enumT; }
+        virtual void OnInitialize(ParticleData& particle_data, uint32_t start_index, uint32_t end_index) {};
+        virtual void OnUpdate(ParticleData& particle_data, const double& delta_time) {};
 
-    // auto-generated from SP_COMPONENT_LIST - no manual registration needed
-    #define X(type, str) REGISTER_COMPONENT(type, ComponentType::type)
-    SP_COMPONENT_LIST
-    #undef X
+        virtual const EmitterModuleType GetType() const = 0;
+    };
 }

@@ -828,6 +828,14 @@ namespace spartan
         }
     }
 
+    void Renderer::DrawIconAtPosition(RHI_Texture* icon, const math::Vector3& position)
+    {
+        if (icon)
+        {
+            m_icons.emplace_back(make_tuple(icon, position));
+        }
+    }
+
     RHI_SwapChain* Renderer::GetSwapChain()
     {
         return swapchain.get();

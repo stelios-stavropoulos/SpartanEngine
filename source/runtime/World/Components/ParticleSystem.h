@@ -19,42 +19,27 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-//= INCLUDES ===========
-#include "pch.h"
-#include "Component.h"
-#include "AudioSource.h"
-#include "Camera.h"
-#include "Light.h"
-#include "Physics.h"
-#include "Script.h"
-#include "Spline.h"
-#include "Terrain.h"
-#include "Volume.h"
-#include "ParticleSystem.h"
-//======================
+#pragma once
 
-//= NAMESPACES =====
-using namespace std;
-//==================
+//= INCLUDES =================================
+#include "Component.h"
+#include <vector>
+//============================================
 
 namespace spartan
 {
-    Component::Component(Entity* entity)
+    class Emitter;
+
+    class ParticleSystem : public Component
     {
-        m_entity_ptr = entity;
-        m_enabled    = true;
-    }
+    public:
+        std::vector<Emitter*> emitters;
 
-    template <typename T>
-    ComponentType Component::TypeToEnum() { return ComponentType::Max; }
+    public:
+        ParticleSystem(Entity* entity);
+        ~ParticleSystem();
 
-    template<typename T>
-    inline constexpr void validate_component_type() { static_assert(is_base_of<Component, T>::value, "Provided type does not implement IComponent"); }
-
-    #define REGISTER_COMPONENT(T, enumT) template<> ComponentType Component::TypeToEnum<T>() { validate_component_type<T>(); return enumT; }
-
-    // auto-generated from SP_COMPONENT_LIST - no manual registration needed
-    #define X(type, str) REGISTER_COMPONENT(type, ComponentType::type)
-    SP_COMPONENT_LIST
-    #undef X
+        // icomponent
+        void Tick() override;
+    };
 }

@@ -1,5 +1,5 @@
 /*
-Copyright(c) 2015-2026 Panos Karabelas
+Copyright(c) 2015-2025 Panos Karabelas
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,42 +19,32 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-//= INCLUDES ===========
+//= INCLUDES ======================
 #include "pch.h"
-#include "Component.h"
-#include "AudioSource.h"
-#include "Camera.h"
-#include "Light.h"
-#include "Physics.h"
-#include "Script.h"
-#include "Spline.h"
-#include "Terrain.h"
-#include "Volume.h"
-#include "ParticleSystem.h"
-//======================
-
-//= NAMESPACES =====
-using namespace std;
-//==================
+#include "EM_SetLifetime.h"
+#include "../ParticleData.h"
+//=================================
 
 namespace spartan
 {
-    Component::Component(Entity* entity)
+    void EM_SetLifetime::OnInitialize(ParticleData& particle_data, uint32_t start_index, uint32_t end_index)
     {
-        m_entity_ptr = entity;
-        m_enabled    = true;
+        if (lifetime.type == particle_property_type::CONSTANT)
+        {
+            float lifetime_constant = lifetime.GetConstValue();
+            for (uint32_t i = start_index; i < end_index; ++i)
+            {
+                particle_data.particles[i].lifetime = lifetime_constant;
+                particle_data.particles[i].normalized_lifetime = 0.0f;
+            }
+        }
+        else if (lifetime.type == particle_property_type::RANGE)
+        {
+            for (uint32_t i = start_index; i < end_index; ++i)
+            {
+                particle_data.particles[i].lifetime = lifetime.GetRangedValue();
+                particle_data.particles[i].normalized_lifetime = 0.0f;
+            }
+        }
     }
-
-    template <typename T>
-    ComponentType Component::TypeToEnum() { return ComponentType::Max; }
-
-    template<typename T>
-    inline constexpr void validate_component_type() { static_assert(is_base_of<Component, T>::value, "Provided type does not implement IComponent"); }
-
-    #define REGISTER_COMPONENT(T, enumT) template<> ComponentType Component::TypeToEnum<T>() { validate_component_type<T>(); return enumT; }
-
-    // auto-generated from SP_COMPONENT_LIST - no manual registration needed
-    #define X(type, str) REGISTER_COMPONENT(type, ComponentType::type)
-    SP_COMPONENT_LIST
-    #undef X
 }

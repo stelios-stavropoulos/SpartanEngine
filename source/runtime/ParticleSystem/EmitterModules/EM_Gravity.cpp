@@ -19,42 +19,38 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-//= INCLUDES ===========
+//= INCLUDES ======================
 #include "pch.h"
-#include "Component.h"
-#include "AudioSource.h"
-#include "Camera.h"
-#include "Light.h"
-#include "Physics.h"
-#include "Script.h"
-#include "Spline.h"
-#include "Terrain.h"
-#include "Volume.h"
-#include "ParticleSystem.h"
-//======================
-
-//= NAMESPACES =====
-using namespace std;
-//==================
+#include "EM_Gravity.h"
+#include "../ParticleData.h"
+//=================================
 
 namespace spartan
 {
-    Component::Component(Entity* entity)
+    void EM_Gravity::OnUpdate(ParticleData& particle_data, const double& delta_time)
     {
-        m_entity_ptr = entity;
-        m_enabled    = true;
+        switch (gravity.type)
+        {
+        case particle_property_type::CONSTANT:
+        {
+            const math::Vector3 gravity_constant = gravity.GetConstValue() * (float)delta_time;
+            for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
+            {
+                particle_data.particles[i].velocity += gravity_constant;
+            }
+            break;
+        }
+        case particle_property_type::RANGE:
+        {
+            for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
+            {
+                const math::Vector3 gravity_range = gravity.GetRangedValue() * (float)delta_time;
+                particle_data.particles[i].velocity += gravity_range;
+            }
+            break;
+        }
+        default:
+            break;
+        }
     }
-
-    template <typename T>
-    ComponentType Component::TypeToEnum() { return ComponentType::Max; }
-
-    template<typename T>
-    inline constexpr void validate_component_type() { static_assert(is_base_of<Component, T>::value, "Provided type does not implement IComponent"); }
-
-    #define REGISTER_COMPONENT(T, enumT) template<> ComponentType Component::TypeToEnum<T>() { validate_component_type<T>(); return enumT; }
-
-    // auto-generated from SP_COMPONENT_LIST - no manual registration needed
-    #define X(type, str) REGISTER_COMPONENT(type, ComponentType::type)
-    SP_COMPONENT_LIST
-    #undef X
 }

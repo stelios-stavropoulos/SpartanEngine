@@ -66,4 +66,5 @@ private:
     static void ActionEntityCreateLightArea();
     static void ActionEntityCreatePhysicsBody();
     static void ActionEntityCreateAudioSource();
+    static void ActionEntityCreateParticleSystem();
 };

@@ -49,6 +49,16 @@ namespace spartan
 
         const float* Data() const { return &r; }
 
+        static Color Lerp(const Color& a, const Color& b, float t)
+        {
+            return Color(
+                std::lerp(a.r, b.r, t),
+                std::lerp(a.g, b.g, t),
+                std::lerp(a.b, b.b, t),
+                std::lerp(a.a, b.a, t)
+            );
+        }
+
         // standard
         static const Color standard_black;
         static const Color standard_white;

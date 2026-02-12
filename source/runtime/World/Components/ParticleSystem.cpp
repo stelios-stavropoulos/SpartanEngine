@@ -19,42 +19,43 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-//= INCLUDES ===========
+//= INCLUDES ================================
 #include "pch.h"
-#include "Component.h"
-#include "AudioSource.h"
-#include "Camera.h"
-#include "Light.h"
-#include "Physics.h"
-#include "Script.h"
-#include "Spline.h"
-#include "Terrain.h"
-#include "Volume.h"
 #include "ParticleSystem.h"
-//======================
-
-//= NAMESPACES =====
-using namespace std;
-//==================
+#include "../../ParticleSystem/Emitter.h"
+#include "../../World/Entity.h"
+#include "../../Profiling/Profiler.h"
+//===========================================
 
 namespace spartan
 {
-    Component::Component(Entity* entity)
+
+    spartan::ParticleSystem::ParticleSystem(Entity* entity) : Component(entity)
     {
-        m_entity_ptr = entity;
-        m_enabled    = true;
+        SP_REGISTER_ATTRIBUTE_VALUE_VALUE(emitters, std::vector<Emitter* >);
     }
 
-    template <typename T>
-    ComponentType Component::TypeToEnum() { return ComponentType::Max; }
+    ParticleSystem::~ParticleSystem()
+    {
+        for (Emitter* emitter : emitters)
+        {
+            delete emitter; // replace
+        }
+        emitters.clear();
+    }
 
-    template<typename T>
-    inline constexpr void validate_component_type() { static_assert(is_base_of<Component, T>::value, "Provided type does not implement IComponent"); }
+    void spartan::ParticleSystem::Tick()
+    {
+        SP_PROFILE_CPU_START("Particle System")
 
-    #define REGISTER_COMPONENT(T, enumT) template<> ComponentType Component::TypeToEnum<T>() { validate_component_type<T>(); return enumT; }
+            const double dt = Timer::GetDeltaTimeSec();
 
-    // auto-generated from SP_COMPONENT_LIST - no manual registration needed
-    #define X(type, str) REGISTER_COMPONENT(type, ComponentType::type)
-    SP_COMPONENT_LIST
-    #undef X
+        for (Emitter* emitter : emitters)
+        {
+            emitter->Update(dt);
+        }
+
+        SP_PROFILE_CPU_END()
+    }
+
 }
