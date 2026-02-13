@@ -139,7 +139,8 @@ namespace spartan
             switch (scope)
             {
                 case RHI_Barrier_Scope::Graphics:
-                    return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                    return VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
+                           VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
                            VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
                            VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
@@ -228,7 +229,7 @@ namespace spartan
                 case VK_IMAGE_LAYOUT_GENERAL:
                     return make_tuple(
                         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                        VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT
+                        VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT
                     );
 
                 default:
@@ -686,10 +687,18 @@ namespace spartan
             // set some dynamic states
             if (m_pso.IsGraphics())
             {
-                // cull mode
+                // binding a new pipeline invalidates all dynamic state, so reset the
+                // cached cull mode to ensure the next SetCullMode call always executes
+                m_cull_mode = RHI_CullMode::Max;
+
+                // cull mode - must be set after every pipeline bind since dynamic state is invalidated
                 if (m_pso.rasterizer_state->GetPolygonMode() == RHI_PolygonMode::Wireframe)
                 {
                     SetCullMode(RHI_CullMode::None);
+                }
+                else
+                {
+                    SetCullMode(RHI_CullMode::Back);
                 }
 
                 // scissor rectangle
@@ -1054,6 +1063,30 @@ namespace spartan
         Profiler::m_rhi_instance_count += instance_count == 1 ? 0 : instance_count;
     }
 
+    void RHI_CommandList::DrawIndexedIndirectCount(RHI_Buffer* args_buffer, const uint32_t args_offset, RHI_Buffer* count_buffer, const uint32_t count_offset, const uint32_t max_draw_count)
+    {
+        SP_ASSERT(m_state == RHI_CommandListState::Recording);
+        SP_ASSERT(args_buffer  != nullptr);
+        SP_ASSERT(count_buffer != nullptr);
+
+        PreDraw();
+
+        // stride between consecutive indirect commands (5 uint32s = 20 bytes)
+        static const uint32_t stride = sizeof(uint32_t) * 5;
+
+        vkCmdDrawIndexedIndirectCount(
+            static_cast<VkCommandBuffer>(m_rhi_resource),
+            static_cast<VkBuffer>(args_buffer->GetRhiResource()),
+            static_cast<VkDeviceSize>(args_offset),
+            static_cast<VkBuffer>(count_buffer->GetRhiResource()),
+            static_cast<VkDeviceSize>(count_offset),
+            max_draw_count,
+            stride
+        );
+
+        Profiler::m_rhi_draw++;
+    }
+
     void RHI_CommandList::Dispatch(uint32_t x, uint32_t y, uint32_t z /*= 1*/)
     {
         SP_ASSERT(m_state == RHI_CommandListState::Recording);
@@ -1063,10 +1096,9 @@ namespace spartan
         vkCmdDispatch(static_cast<VkCommandBuffer>(m_rhi_resource), x, y, z);
     }
 
-    void RHI_CommandList::TraceRays(const uint32_t width, const uint32_t height, RHI_Buffer* shader_binding_table)
+    void RHI_CommandList::TraceRays(const uint32_t width, const uint32_t height)
     {
         SP_ASSERT(m_state == RHI_CommandListState::Recording);
-        SP_ASSERT(shader_binding_table && shader_binding_table->GetType() == RHI_Buffer_Type::ShaderBindingTable);
 
         // skip if dimensions are invalid (can happen during window minimize/resize)
         if (width == 0 || height == 0)
@@ -1074,6 +1106,21 @@ namespace spartan
 
         // bind descriptor sets (same as draw/dispatch)
         PreDraw();
+
+        // get or create an sbt for the currently bound pipeline
+        void* pipeline_handle = GetRhiResourcePipeline();
+        SP_ASSERT(pipeline_handle != nullptr);
+        auto it = m_shader_binding_tables.find(pipeline_handle);
+        if (it == m_shader_binding_tables.end())
+        {
+            uint32_t handle_size = RHI_Device::PropertyGetShaderGroupHandleSize();
+            auto sbt = make_unique<RHI_Buffer>(RHI_Buffer_Type::ShaderBindingTable, handle_size, 3, nullptr, true, "sbt");
+            it = m_shader_binding_tables.emplace(pipeline_handle, move(sbt)).first;
+        }
+        RHI_Buffer* sbt = it->second.get();
+
+        // update handles (copies shader group handles from the pipeline into the buffer)
+        sbt->UpdateHandles(this);
 
         // load extension func once
         static PFN_vkCmdTraceRaysKHR pfn_vk_cmd_trace_rays_khr = nullptr;
@@ -1084,16 +1131,16 @@ namespace spartan
         }
 
         // get regions
-        RHI_StridedDeviceAddressRegion raygen_region = shader_binding_table->GetRegion(RHI_Shader_Type::RayGeneration);
-        RHI_StridedDeviceAddressRegion miss_region   = shader_binding_table->GetRegion(RHI_Shader_Type::RayMiss);
-        RHI_StridedDeviceAddressRegion hit_region    = shader_binding_table->GetRegion(RHI_Shader_Type::RayHit);
+        RHI_StridedDeviceAddressRegion raygen_region = sbt->GetRegion(RHI_Shader_Type::RayGeneration);
+        RHI_StridedDeviceAddressRegion miss_region   = sbt->GetRegion(RHI_Shader_Type::RayMiss);
+        RHI_StridedDeviceAddressRegion hit_region    = sbt->GetRegion(RHI_Shader_Type::RayHit);
 
         // convert to vulkan regions
         VkStridedDeviceAddressRegionKHR vk_raygen   = { raygen_region.device_address, raygen_region.stride, raygen_region.size };
         VkStridedDeviceAddressRegionKHR vk_miss     = { miss_region.device_address, miss_region.stride, miss_region.size };
         VkStridedDeviceAddressRegionKHR vk_hit      = { hit_region.device_address, hit_region.stride, hit_region.size };
         VkStridedDeviceAddressRegionKHR vk_callable = {};
-    
+
         pfn_vk_cmd_trace_rays_khr(
             static_cast<VkCommandBuffer>(m_rhi_resource), // commandBuffer
             &vk_raygen,                                   // pRaygenShaderBindingTable
@@ -2126,102 +2173,29 @@ namespace spartan
             {
                 SP_ASSERT(barrier.texture != nullptr);
 
-                VkPipelineStageFlags2 stages = (barrier.scope_src != RHI_Barrier_Scope::Auto)
-                    ? barrier_helpers::scope_to_stages(barrier.scope_src)
-                    : (VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+                // snapshot per-mip layouts at insert time (they may change before flush)
+                PendingBarrierInfo pending  = {};
+                pending.barrier             = barrier;
+                pending.image               = barrier.texture->GetRhiResource();
+                pending.aspect_mask         = get_aspect_mask(barrier.texture->GetFormat());
+                pending.array_length        = barrier.texture->GetType() == RHI_Texture_Type::Type3D ? 1 : barrier.texture->GetDepth();
+                pending.is_depth            = barrier.texture->GetFormat() == RHI_Format::D16_Unorm ||
+                                              barrier.texture->GetFormat() == RHI_Format::D32_Float ||
+                                              barrier.texture->GetFormat() == RHI_Format::D32_Float_S8X24_Uint;
+                pending.has_per_mip_views   = barrier.texture->HasPerMipViews();
+                pending.per_mip_count       = barrier.texture->GetMipCount();
 
-                VkImageMemoryBarrier2 vk_barrier           = {};
-                vk_barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                vk_barrier.srcStageMask                    = stages;
-                vk_barrier.dstStageMask                    = (barrier.scope_dst != RHI_Barrier_Scope::Auto)  ? barrier_helpers::scope_to_stages(barrier.scope_dst) : stages;
-                vk_barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-                vk_barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-                vk_barrier.image                           = static_cast<VkImage>(barrier.texture->GetRhiResource());
-                vk_barrier.subresourceRange.aspectMask     = get_aspect_mask(barrier.texture->GetFormat());
-                vk_barrier.subresourceRange.baseArrayLayer = 0;
-                vk_barrier.subresourceRange.layerCount     = barrier.texture->GetType() == RHI_Texture_Type::Type3D ? 1 : barrier.texture->GetDepth();
-
-                VkDependencyInfo dependency_info = {};
-                dependency_info.sType            = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-
-                // helper lambda to set access masks based on layout (read-only layouts can't have write access)
-                auto set_access_masks_for_layout = [&barrier](VkImageMemoryBarrier2& b, RHI_Image_Layout layout)
+                if (pending.has_per_mip_views)
                 {
-                    bool is_read_only_layout = (layout == RHI_Image_Layout::Shader_Read);
-
-                    switch (barrier.sync_type)
-                    {
-                        case RHI_BarrierType::EnsureWriteThenRead:
-                            // if layout is read-only, the write already happened (now in read layout), use read-only masks
-                            if (is_read_only_layout)
-                            {
-                                b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                                b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                            }
-                            else
-                            {
-                                b.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-                                b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                            }
-                            break;
-                        case RHI_BarrierType::EnsureReadThenWrite:
-                            if (is_read_only_layout)
-                            {
-                                b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                                b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                            }
-                            else
-                            {
-                                b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                                b.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-                            }
-                            break;
-                        case RHI_BarrierType::EnsureWriteThenWrite:
-                            if (is_read_only_layout)
-                            {
-                                b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                                b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-                            }
-                            else
-                            {
-                                b.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-                                b.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-                            }
-                            break;
-                    }
-                };
-
-                VkImageMemoryBarrier2 barriers[rhi_max_mip_count];
-                if (barrier.texture->HasPerMipViews())
-                {
-                    for (uint32_t mip = 0; mip < barrier.texture->GetMipCount(); ++mip)
-                    {
-                        RHI_Image_Layout layout                   = barrier_helpers::get_layout(barrier.texture->GetRhiResource(), mip);
-                        set_access_masks_for_layout(vk_barrier, layout);
-                        vk_barrier.oldLayout                      = vulkan_image_layout[static_cast<uint32_t>(layout)];
-                        vk_barrier.newLayout                      = vulkan_image_layout[static_cast<uint32_t>(layout)]; // no transition
-                        vk_barrier.subresourceRange.baseMipLevel  = mip;
-                        vk_barrier.subresourceRange.levelCount    = 1;
-                        barriers[mip]                             = vk_barrier;
-                    }
-                    dependency_info.imageMemoryBarrierCount = barrier.texture->GetMipCount();
-                    dependency_info.pImageMemoryBarriers    = barriers;
+                    for (uint32_t mip = 0; mip < pending.per_mip_count; ++mip)
+                        pending.per_mip_layouts[mip] = barrier_helpers::get_layout(pending.image, mip);
                 }
                 else
                 {
-                    RHI_Image_Layout layout                  = barrier_helpers::get_layout(barrier.texture->GetRhiResource(), 0);
-                    set_access_masks_for_layout(vk_barrier, layout);
-                    vk_barrier.oldLayout                     = vulkan_image_layout[static_cast<uint32_t>(layout)];
-                    vk_barrier.newLayout                     = vulkan_image_layout[static_cast<uint32_t>(layout)]; // no transition
-                    vk_barrier.subresourceRange.baseMipLevel = 0;
-                    vk_barrier.subresourceRange.levelCount   = barrier.texture->GetMipCount();
-                    dependency_info.imageMemoryBarrierCount  = 1;
-                    dependency_info.pImageMemoryBarriers     = &vk_barrier;
+                    pending.per_mip_layouts[0] = barrier_helpers::get_layout(pending.image, 0);
                 }
 
-                RenderPassEnd();
-                vkCmdPipelineBarrier2(static_cast<VkCommandBuffer>(m_rhi_resource), &dependency_info);
-                Profiler::m_rhi_pipeline_barriers++;
+                m_pending_barriers.push_back(pending);
                 break;
             }
 
@@ -2229,28 +2203,10 @@ namespace spartan
             {
                 SP_ASSERT(barrier.buffer != nullptr);
 
-                VkBufferMemoryBarrier2 vk_barrier = {};
-                vk_barrier.sType                  = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-                vk_barrier.srcStageMask           = (barrier.scope_src != RHI_Barrier_Scope::Auto)
-                    ? barrier_helpers::scope_to_stages(barrier.scope_src)
-                    : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                vk_barrier.srcAccessMask          = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-                vk_barrier.dstStageMask           = (barrier.scope_dst != RHI_Barrier_Scope::Auto)
-                    ? barrier_helpers::scope_to_stages(barrier.scope_dst)
-                    : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                vk_barrier.dstAccessMask          = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-                vk_barrier.buffer                 = static_cast<VkBuffer>(barrier.buffer->GetRhiResource());
-                vk_barrier.offset                 = barrier.offset;
-                vk_barrier.size                   = (barrier.size == 0) ? VK_WHOLE_SIZE : barrier.size;
-
-                VkDependencyInfo dependency_info         = {};
-                dependency_info.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-                dependency_info.bufferMemoryBarrierCount = 1;
-                dependency_info.pBufferMemoryBarriers    = &vk_barrier;
-
-                RenderPassEnd();
-                vkCmdPipelineBarrier2(static_cast<VkCommandBuffer>(m_rhi_resource), &dependency_info);
-                Profiler::m_rhi_pipeline_barriers++;
+                // defer to pending list, no state to snapshot for buffers
+                PendingBarrierInfo pending = {};
+                pending.barrier            = barrier;
+                m_pending_barriers.push_back(pending);
                 break;
             }
         }
@@ -2261,29 +2217,183 @@ namespace spartan
         if (m_pending_barriers.empty())
             return;
 
-        array<VkImageMemoryBarrier2, 32> vk_barriers;
-        for (uint32_t i = 0; i < static_cast<uint32_t>(m_pending_barriers.size()); i++)
-        {
-            const PendingBarrierInfo& pending = m_pending_barriers[i];
+        // determine the dst scope hint from the current pso (narrows overly broad auto scopes)
+        RHI_Barrier_Scope pso_scope_hint = RHI_Barrier_Scope::All;
+        if (m_pso.IsCompute())
+            pso_scope_hint = RHI_Barrier_Scope::Compute;
+        else if (m_pso.IsGraphics())
+            pso_scope_hint = RHI_Barrier_Scope::Graphics;
+        else if (m_pso.IsRayTracing())
+            pso_scope_hint = RHI_Barrier_Scope::Compute; // ray tracing uses compute-adjacent stages
 
-            vk_barriers[i] = barrier_helpers::create_image_barrier(
-                pending.layout_old,
-                pending.layout_new,
-                pending.image,
-                pending.aspect_mask,
-                pending.mip_index,
-                pending.mip_range,
-                pending.array_length,
-                pending.is_depth,
-                pending.barrier.scope_src,
-                pending.barrier.scope_dst
-            );
+        // helper: set image sync access masks based on layout and sync type
+        auto set_sync_access_masks = [](VkImageMemoryBarrier2& b, RHI_Image_Layout layout, RHI_BarrierType sync_type)
+        {
+            bool is_read_only_layout = (layout == RHI_Image_Layout::Shader_Read);
+
+            switch (sync_type)
+            {
+                case RHI_BarrierType::EnsureWriteThenRead:
+                    if (is_read_only_layout)
+                    {
+                        b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                        b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                    }
+                    else
+                    {
+                        b.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+                        b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                    }
+                    break;
+                case RHI_BarrierType::EnsureReadThenWrite:
+                    if (is_read_only_layout)
+                    {
+                        b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                        b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                    }
+                    else
+                    {
+                        b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                        b.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+                    }
+                    break;
+                case RHI_BarrierType::EnsureWriteThenWrite:
+                    if (is_read_only_layout)
+                    {
+                        b.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                        b.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+                    }
+                    else
+                    {
+                        b.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+                        b.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+                    }
+                    break;
+            }
+        };
+
+        static thread_local vector<VkImageMemoryBarrier2> image_barriers;
+        static thread_local vector<VkBufferMemoryBarrier2> buffer_barriers;
+        image_barriers.clear();
+        buffer_barriers.clear();
+
+        for (const auto& pending : m_pending_barriers)
+        {
+            switch (pending.barrier.type)
+            {
+                case RHI_Barrier::Type::ImageLayout:
+                {
+                    // use pso-aware scope narrowing for the dst when auto and the target layout is general
+                    RHI_Barrier_Scope effective_dst = pending.barrier.scope_dst;
+                    if (effective_dst == RHI_Barrier_Scope::Auto && pending.layout_new == RHI_Image_Layout::General)
+                        effective_dst = pso_scope_hint;
+
+                    image_barriers.push_back(barrier_helpers::create_image_barrier(
+                        pending.layout_old,
+                        pending.layout_new,
+                        pending.image,
+                        pending.aspect_mask,
+                        pending.mip_index,
+                        pending.mip_range,
+                        pending.array_length,
+                        pending.is_depth,
+                        pending.barrier.scope_src,
+                        effective_dst
+                    ));
+                    break;
+                }
+
+                case RHI_Barrier::Type::ImageSync:
+                {
+                    // resolve stage masks with pso-aware narrowing
+                    VkPipelineStageFlags2 src_stages = (pending.barrier.scope_src != RHI_Barrier_Scope::Auto)
+                        ? barrier_helpers::scope_to_stages(pending.barrier.scope_src)
+                        : (VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+
+                    VkPipelineStageFlags2 dst_stages = (pending.barrier.scope_dst != RHI_Barrier_Scope::Auto)
+                        ? barrier_helpers::scope_to_stages(pending.barrier.scope_dst)
+                        : barrier_helpers::scope_to_stages(pso_scope_hint, pending.is_depth);
+
+                    if (pending.has_per_mip_views)
+                    {
+                        for (uint32_t mip = 0; mip < pending.per_mip_count; ++mip)
+                        {
+                            RHI_Image_Layout layout = pending.per_mip_layouts[mip];
+
+                            VkImageMemoryBarrier2 vk_barrier           = {};
+                            vk_barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                            vk_barrier.srcStageMask                    = src_stages;
+                            vk_barrier.dstStageMask                    = dst_stages;
+                            vk_barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                            vk_barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                            vk_barrier.image                           = static_cast<VkImage>(pending.image);
+                            vk_barrier.oldLayout                       = vulkan_image_layout[static_cast<uint32_t>(layout)];
+                            vk_barrier.newLayout                       = vulkan_image_layout[static_cast<uint32_t>(layout)]; // no transition
+                            vk_barrier.subresourceRange.aspectMask     = pending.aspect_mask;
+                            vk_barrier.subresourceRange.baseMipLevel   = mip;
+                            vk_barrier.subresourceRange.levelCount     = 1;
+                            vk_barrier.subresourceRange.baseArrayLayer = 0;
+                            vk_barrier.subresourceRange.layerCount     = pending.array_length;
+
+                            set_sync_access_masks(vk_barrier, layout, pending.barrier.sync_type);
+                            image_barriers.push_back(vk_barrier);
+                        }
+                    }
+                    else
+                    {
+                        RHI_Image_Layout layout = pending.per_mip_layouts[0];
+
+                        VkImageMemoryBarrier2 vk_barrier           = {};
+                        vk_barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                        vk_barrier.srcStageMask                    = src_stages;
+                        vk_barrier.dstStageMask                    = dst_stages;
+                        vk_barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                        vk_barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                        vk_barrier.image                           = static_cast<VkImage>(pending.image);
+                        vk_barrier.oldLayout                       = vulkan_image_layout[static_cast<uint32_t>(layout)];
+                        vk_barrier.newLayout                       = vulkan_image_layout[static_cast<uint32_t>(layout)]; // no transition
+                        vk_barrier.subresourceRange.aspectMask     = pending.aspect_mask;
+                        vk_barrier.subresourceRange.baseMipLevel   = 0;
+                        vk_barrier.subresourceRange.levelCount     = pending.per_mip_count;
+                        vk_barrier.subresourceRange.baseArrayLayer = 0;
+                        vk_barrier.subresourceRange.layerCount     = pending.array_length;
+
+                        set_sync_access_masks(vk_barrier, layout, pending.barrier.sync_type);
+                        image_barriers.push_back(vk_barrier);
+                    }
+                    break;
+                }
+
+                case RHI_Barrier::Type::BufferSync:
+                {
+                    VkBufferMemoryBarrier2 vk_barrier = {};
+                    vk_barrier.sType                  = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                    vk_barrier.srcStageMask           = (pending.barrier.scope_src != RHI_Barrier_Scope::Auto)
+                        ? barrier_helpers::scope_to_stages(pending.barrier.scope_src)
+                        : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                    vk_barrier.srcAccessMask          = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+                    vk_barrier.dstStageMask           = (pending.barrier.scope_dst != RHI_Barrier_Scope::Auto)
+                        ? barrier_helpers::scope_to_stages(pending.barrier.scope_dst)
+                        : barrier_helpers::scope_to_stages(pso_scope_hint);
+                    vk_barrier.dstAccessMask          = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+                    vk_barrier.srcQueueFamilyIndex    = VK_QUEUE_FAMILY_IGNORED;
+                    vk_barrier.dstQueueFamilyIndex    = VK_QUEUE_FAMILY_IGNORED;
+                    vk_barrier.buffer                 = static_cast<VkBuffer>(pending.barrier.buffer->GetRhiResource());
+                    vk_barrier.offset                 = pending.barrier.offset;
+                    vk_barrier.size                   = (pending.barrier.size == 0) ? VK_WHOLE_SIZE : pending.barrier.size;
+
+                    buffer_barriers.push_back(vk_barrier);
+                    break;
+                }
+            }
         }
 
-        VkDependencyInfo dependency_info        = {};
-        dependency_info.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
-        dependency_info.imageMemoryBarrierCount = static_cast<uint32_t>(m_pending_barriers.size());
-        dependency_info.pImageMemoryBarriers    = vk_barriers.data();
+        VkDependencyInfo dependency_info         = {};
+        dependency_info.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+        dependency_info.imageMemoryBarrierCount  = static_cast<uint32_t>(image_barriers.size());
+        dependency_info.pImageMemoryBarriers     = image_barriers.data();
+        dependency_info.bufferMemoryBarrierCount = static_cast<uint32_t>(buffer_barriers.size());
+        dependency_info.pBufferMemoryBarriers    = buffer_barriers.data();
 
         RenderPassEnd();
         vkCmdPipelineBarrier2(static_cast<VkCommandBuffer>(m_rhi_resource), &dependency_info);

@@ -29,10 +29,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Components/Physics.h"
 #include "Components/Script.h"
 #include "Components/Spline.h"
+#include "Components/SplineFollower.h"
 #include "Components/Terrain.h"
 #include "Components/Volume.h"
+#include "Components/ParticleSystem.h"
 #include "Components/ParticleSystemCPU.h"
-
 SP_WARNINGS_OFF
 #include "../IO/pugixml.hpp"
 SP_WARNINGS_ON
@@ -434,6 +435,9 @@ namespace spartan
         case ComponentType::Spline:
             component = std::make_shared<Spline>(this);
             break;
+        case ComponentType::SplineFollower:
+            component = std::make_shared<SplineFollower>(this);
+            break;
         case ComponentType::Terrain:
             component = std::make_shared<Terrain>(this);
             break;
@@ -442,6 +446,9 @@ namespace spartan
             break;
         case ComponentType::Script:
             component = std::make_shared<Script>(this);
+            break;
+        case ComponentType::ParticleSystem:
+            component = std::make_shared<ParticleSystem>(this);
             break;
         case ComponentType::ParticleSystemCPU:
             component = std::make_shared<ParticleSystemCPU>(this);

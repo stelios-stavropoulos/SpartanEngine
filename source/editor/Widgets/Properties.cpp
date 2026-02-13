@@ -35,16 +35,17 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "World/Components/Light.h"
 #include "World/Components/AudioSource.h"
 #include "World/Components/Spline.h"
+#include "World/Components/SplineFollower.h"
 #include "World/Components/Terrain.h"
 #include "World/Components/Camera.h"
 #include "World/Components/Volume.h"
 #include "Rendering/Renderer.h"
 #include "World/Components/Script.h"
+#include "World/Components/ParticleSystem.h"
 
 #include "../runtime/World/Components/ParticleSystemCPU.h"
 #include "../runtime/ParticleSystem/Emitter.h"
 #include "EmitterViewer.h"
-
 #include "../runtime/ParticleSystem/EmitterModules/EM_AddVelocity.h"
 #include "../runtime/ParticleSystem/EmitterModules/EM_ApplyVelocity.h"
 #include "../runtime/ParticleSystem/EmitterModules/EM_Gravity.h"
@@ -67,10 +68,17 @@ namespace
     std::unique_ptr<ButtonColorPicker> m_material_color_picker;
     std::unique_ptr<ButtonColorPicker> m_colorPicker_light;
     std::unique_ptr<ButtonColorPicker> m_colorPicker_camera;
+    std::unique_ptr<ButtonColorPicker> m_colorPicker_particle_start;
+    std::unique_ptr<ButtonColorPicker> m_colorPicker_particle_end;
 
     // context menu state
     string context_menu_id;
     Component* copied_component = nullptr;
+
+    // deferred component removal - storing the id prevents a use-after-free
+    // crash when the component is destroyed while its Show* function is still on the stack
+    uint64_t pending_removal_id    = 0;
+    Entity*  pending_removal_owner = nullptr;
 
     // component content tracking
     bool component_content_active = false;
@@ -95,6 +103,7 @@ namespace
         constexpr float section_gap    = 6.0f;
 
         // component accent colors (subtle, professional)
+
         inline ImVec4 accent_entity()                   { return ImVec4(0.45f, 0.55f, 0.70f, 1.0f); }
         inline ImVec4 accent_light()                    { return ImVec4(0.85f, 0.75f, 0.35f, 1.0f); }
         inline ImVec4 accent_camera()                   { return ImVec4(0.50f, 0.70f, 0.55f, 1.0f); }
@@ -105,7 +114,9 @@ namespace
         inline ImVec4 accent_terrain()                  { return ImVec4(0.50f, 0.70f, 0.45f, 1.0f); }
         inline ImVec4 accent_volume()                   { return ImVec4(0.55f, 0.55f, 0.75f, 1.0f); }
         inline ImVec4 accent_spline()                   { return ImVec4(0.30f, 0.75f, 0.70f, 1.0f); }
+        inline ImVec4 accent_spline_follower()          { return ImVec4(0.35f, 0.80f, 0.65f, 1.0f); }
         inline ImVec4 accent_script()                   { return ImVec4(0.60f, 0.70f, 0.50f, 1.0f); }
+        inline ImVec4 accent_particles()                { return ImVec4(0.90f, 0.55f, 0.30f, 1.0f); }
         inline ImVec4 accent_particle_system_CPU()      { return ImVec4(0.60f, 0.60f, 0.1f, 1.0f); }
 
         // helper to get dimmed version for backgrounds
@@ -137,12 +148,12 @@ namespace
         inline void begin_property(const char* label, const char* tooltip = nullptr)
         {
             ImGui::AlignTextToFramePadding();
-            
+
             // subtle text color for labels
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.0f));
             ImGui::TextUnformatted(label);
             ImGui::PopStyleColor();
-            
+
             if (tooltip && ImGui::IsItemHovered())
             {
                 ImGui::BeginTooltip();
@@ -242,7 +253,7 @@ namespace
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(design::spacing_md, design::spacing_md));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(design::spacing_md, design::spacing_sm));
-        
+
         if (ImGui::BeginPopup(id.c_str()))
         {
             if (removable)
@@ -253,7 +264,10 @@ namespace
                     {
                         if (component)
                         {
-                            entity->RemoveComponentById(component->GetObjectId());
+                            // defer the removal so we don't destroy a component
+                            // while its Show* function is still on the call stack
+                            pending_removal_id    = component->GetObjectId();
+                            pending_removal_owner = entity;
                         }
                     }
                 }
@@ -276,7 +290,7 @@ namespace
 
             ImGui::EndPopup();
         }
-        
+
         ImGui::PopStyleVar(2);
     }
 
@@ -287,12 +301,12 @@ namespace
     bool component_begin(const char* name, const ImVec4& accent_color, Component* component_instance, bool options = true, const bool removable = true)
     {
         ImGui::PushID(name);
-        
+
         // header styling
         ImVec4 header_bg       = design::dimmed(accent_color, 0.25f);
         ImVec4 header_hovered  = design::dimmed(accent_color, 0.35f);
         ImVec4 header_active   = design::dimmed(accent_color, 0.30f);
-        
+
         ImGui::PushStyleColor(ImGuiCol_Header, header_bg);
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, header_hovered);
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, header_active);
@@ -303,7 +317,7 @@ namespace
         ImGui::PushFont(Editor::font_bold);
         const bool is_expanded = ImGuiSp::collapsing_header(name, ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen);
         ImGui::PopFont();
-        
+
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(3);
 
@@ -474,7 +488,7 @@ namespace
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(axis[i]);
             ImGui::PopStyleColor();
-            
+
             // SPACE between label and input
             ImGui::SameLine(0, label_to_input);
 
@@ -535,7 +549,7 @@ namespace
 
         // position
         property_vector3("Position", position, "local position in meters");
-        
+
         // rotation
         property_vector3("Rotation", edit_euler, "local rotation in degrees");
 
@@ -569,7 +583,7 @@ namespace
         ImGui::PopItemWidth();
 
         ImGui::SameLine(0, design::spacing_sm);
-        
+
         if (file_selection::browse_button(("browse_" + string(label)).c_str()))
         {
             file_selection::open(on_browse);
@@ -585,9 +599,11 @@ Properties::Properties(Editor* editor) : Widget(editor)
     m_title          = "Properties";
     m_size_initial.x = 500;
 
-    m_colorPicker_light     = make_unique<ButtonColorPicker>("Light Color Picker");
-    m_material_color_picker = make_unique<ButtonColorPicker>("Material Color Picker");
-    m_colorPicker_camera    = make_unique<ButtonColorPicker>("Camera Color Picker");
+    m_colorPicker_light          = make_unique<ButtonColorPicker>("Light Color Picker");
+    m_material_color_picker      = make_unique<ButtonColorPicker>("Material Color Picker");
+    m_colorPicker_camera         = make_unique<ButtonColorPicker>("Camera Color Picker");
+    m_colorPicker_particle_start = make_unique<ButtonColorPicker>("Particle Start Color");
+    m_colorPicker_particle_end   = make_unique<ButtonColorPicker>("Particle End Color");
 
     file_selection::initialize(editor);
 }
@@ -603,7 +619,7 @@ void Properties::OnTickVisible()
         {
             // multiple entities selected - show summary
             ImGui::Dummy(ImVec2(0, design::spacing_md));
-            
+
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.85f, 0.4f, 1.0f));
             ImGui::PushFont(Editor::font_bold);
             char buf[64];
@@ -634,6 +650,7 @@ void Properties::OnTickVisible()
             ShowCamera(entity->GetComponent<Camera>());
             ShowTerrain(entity->GetComponent<Terrain>());
             ShowSpline(entity->GetComponent<Spline>());
+            ShowSplineFollower(entity->GetComponent<SplineFollower>());
             ShowAudioSource(entity->GetComponent<AudioSource>());
             ShowParticleSystemCPU(entity->GetComponent<ParticleSystemCPU>());
 
@@ -644,8 +661,17 @@ void Properties::OnTickVisible()
             ShowMaterial(material);
             ShowPhysics(entity->GetComponent<Physics>());
             ShowVolume(entity->GetComponent<Volume>());
+            ShowParticleSystem(entity->GetComponent<ParticleSystem>());
 
             ShowAddComponentButton();
+
+            // process deferred component removal now that all Show* calls are done
+            if (pending_removal_owner && pending_removal_id != 0)
+            {
+                pending_removal_owner->RemoveComponentById(pending_removal_id);
+                pending_removal_owner = nullptr;
+                pending_removal_id    = 0;
+            }
         }
         else if (!m_inspected_material.expired())
         {
@@ -699,7 +725,7 @@ void Properties::ShowEntity(Entity* entity) const
         ImGui::TextUnformatted(entity->GetObjectName().c_str());
         ImGui::PopFont();
         ImGui::PopStyleColor();
-        
+
         layout::group_spacing();
 
         // active toggle
@@ -743,6 +769,81 @@ void Properties::ShowScript(spartan::Script* script) const
         // status
         bool is_loaded = script->script.valid();
         property_text("Status", is_loaded ? "Loaded" : "Not Loaded", "whether the script is loaded and valid");
+
+        if (is_loaded)
+        {
+            if (ImGui::BeginTable("ScriptProperties", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+            {
+                ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableHeadersRow();
+
+                for (auto&& [K, V] : script->script)
+                {
+                    std::string key = K.as<std::string>();
+
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%s", key.c_str());
+
+                    ImGui::TableSetColumnIndex(1);
+
+                    if (V.is<bool>())
+                    {
+                        bool value = V.as<bool>();
+                        if (ImGui::Checkbox(("##" + key).c_str(), &value))
+                        {
+                            script->script[K] = value;
+                        }
+                    }
+                    else if (V.is<int>())
+                    {
+                        int value = V.as<int>();
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        if (ImGui::InputInt(("##" + key).c_str(), &value))
+                        {
+                            script->script[K] = value;
+                        }
+                    }
+                    else if (V.is<float>() || V.is<double>())
+                    {
+                        float value = V.as<float>();
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        if (ImGui::InputFloat(("##" + key).c_str(), &value))
+                        {
+                            script->script[K] = value;
+                        }
+                    }
+                    else if (V.is<std::string>())
+                    {
+                        std::string value = V.as<std::string>();
+                        char buffer[256];
+                        strncpy_s(buffer, value.c_str(), sizeof(buffer) - 1);
+                        buffer[sizeof(buffer) - 1] = '\0';
+
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        if (ImGui::InputText(("##" + key).c_str(), buffer, sizeof(buffer)))
+                        {
+                            script->script[K] = std::string(buffer);
+                        }
+                    }
+                    else if (V.is<sol::table>())
+                    {
+                        ImGui::TextDisabled("[Table]");
+                    }
+                    else if (V.is<sol::function>())
+                    {
+                        ImGui::TextDisabled("[Function]");
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("[Unknown Type]");
+                    }
+                }
+
+                ImGui::EndTable();
+            }
+        }
 
         layout::group_spacing();
 
@@ -933,7 +1034,7 @@ void Properties::ShowRenderable(spartan::Renderable* renderable) const
             ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_TableRowBg, ImVec4(0.12f, 0.12f, 0.14f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
-            
+
             if (ImGui::BeginTable("##lod_table", lod_count + 1,
                 ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchSame))
             {
@@ -1006,7 +1107,7 @@ void Properties::ShowRenderable(spartan::Renderable* renderable) const
 
                     char instance_name[32];
                     std::snprintf(instance_name, sizeof(instance_name), "Instance %u", i);
-                    
+
                     if (ImGui::TreeNode(instance_name))
                     {
                         if (ImGui::DragFloat3("Position", &pos.x, 0.1f))
@@ -1148,20 +1249,20 @@ void Properties::ShowPhysics(Physics* body) const
         // freeze position with axis toggles
         {
             layout::begin_property("Freeze Position", "lock position on specific axes");
-            
+
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
             ImGui::TextUnformatted("X");
             ImGui::PopStyleColor();
             ImGui::SameLine();
             ImGuiSp::toggle_switch("##freeze_pos_x", &freeze_pos_x);
-            
+
             ImGui::SameLine(0, design::spacing_md);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 0.4f, 1.0f));
             ImGui::TextUnformatted("Y");
             ImGui::PopStyleColor();
             ImGui::SameLine();
             ImGuiSp::toggle_switch("##freeze_pos_y", &freeze_pos_y);
-            
+
             ImGui::SameLine(0, design::spacing_md);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.6f, 0.9f, 1.0f));
             ImGui::TextUnformatted("Z");
@@ -1173,20 +1274,20 @@ void Properties::ShowPhysics(Physics* body) const
         // freeze rotation with axis toggles
         {
             layout::begin_property("Freeze Rotation", "lock rotation on specific axes");
-            
+
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
             ImGui::TextUnformatted("X");
             ImGui::PopStyleColor();
             ImGui::SameLine();
             ImGuiSp::toggle_switch("##freeze_rot_x", &freeze_rot_x);
-            
+
             ImGui::SameLine(0, design::spacing_md);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 0.4f, 1.0f));
             ImGui::TextUnformatted("Y");
             ImGui::PopStyleColor();
             ImGui::SameLine();
             ImGuiSp::toggle_switch("##freeze_rot_y", &freeze_rot_y);
-            
+
             ImGui::SameLine(0, design::spacing_md);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.6f, 0.9f, 1.0f));
             ImGui::TextUnformatted("Z");
@@ -1323,7 +1424,7 @@ void Properties::ShowMaterial(Material* material) const
                 // constrain width to available space
                 float available_width = ImGui::GetContentRegionAvail().x;
                 float slider_width    = ImMin(available_width, 120.0f);
-                
+
                 if (mat_property == MaterialProperty::ColorA)
                 {
                     m_material_color_picker->Update();
@@ -1373,9 +1474,9 @@ void Properties::ShowMaterial(Material* material) const
         // tiling
         {
             layout::begin_property("Tiling", "texture repeat");
-            
+
             float w = (layout::value_width() - design::spacing_md - 24.0f) * 0.5f;
-            
+
             ImGui::PushItemWidth(w);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.5f, 0.5f, 1.0f));
             ImGui::TextUnformatted("X");
@@ -1383,7 +1484,7 @@ void Properties::ShowMaterial(Material* material) const
             ImGui::SameLine();
             ImGui::InputFloat("##tileX", &tiling.x, 0.0f, 0.0f, "%.2f");
             ImGui::PopItemWidth();
-            
+
             ImGui::SameLine();
             ImGui::PushItemWidth(w);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
@@ -1397,9 +1498,9 @@ void Properties::ShowMaterial(Material* material) const
         // offset
         {
             layout::begin_property("Offset", "texture offset");
-            
+
             float w = (layout::value_width() - design::spacing_md - 24.0f) * 0.5f;
-            
+
             ImGui::PushItemWidth(w);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.5f, 0.5f, 1.0f));
             ImGui::TextUnformatted("X");
@@ -1407,7 +1508,7 @@ void Properties::ShowMaterial(Material* material) const
             ImGui::SameLine();
             ImGui::InputFloat("##offsetX", &offset.x, 0.0f, 0.0f, "%.2f");
             ImGui::PopItemWidth();
-            
+
             ImGui::SameLine();
             ImGui::PushItemWidth(w);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
@@ -1423,13 +1524,13 @@ void Properties::ShowMaterial(Material* material) const
         bool invert_y = material->GetProperty(MaterialProperty::TextureInvertY) > 0.5f;
         {
             layout::begin_property("Invert", "flip texture axes");
-            
+
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.5f, 0.5f, 1.0f));
             ImGui::TextUnformatted("X");
             ImGui::PopStyleColor();
             ImGui::SameLine();
             ImGuiSp::toggle_switch("##invertX", &invert_x);
-            
+
             ImGui::SameLine(0, design::spacing_md);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
             ImGui::TextUnformatted("Y");
@@ -1645,6 +1746,12 @@ void Properties::ShowSpline(spartan::Spline* spline) const
         uint32_t resolution  = spline->GetResolution();
         uint32_t point_count = spline->GetControlPointCount();
         float road_width     = spline->GetRoadWidth();
+        uint32_t profile     = static_cast<uint32_t>(spline->GetProfile());
+        float height         = spline->GetHeight();
+        float thickness      = spline->GetThickness();
+        uint32_t tube_sides  = spline->GetTubeSides();
+        float inst_spacing   = spline->GetInstanceSpacing();
+        bool inst_align      = spline->GetAlignInstancesToSpline();
         //=================================================
 
         layout::section_header("Spline");
@@ -1690,9 +1797,18 @@ void Properties::ShowSpline(spartan::Spline* spline) const
             math::Vector3 position = math::Vector3::Zero;
             if (point_count > 0)
             {
-                if (spartan::Entity* last_child = spline->GetEntity()->GetChildByIndex(point_count - 1))
+                // find the last control point child by walking children in reverse
+                spartan::Entity* parent = spline->GetEntity();
+                for (uint32_t i = parent->GetChildrenCount(); i > 0; i--)
                 {
-                    position = last_child->GetPositionLocal() + math::Vector3(5.0f, 0.0f, 0.0f);
+                    if (spartan::Entity* child = parent->GetChildByIndex(i - 1))
+                    {
+                        if (child->GetObjectName().find("spline_point_") == 0)
+                        {
+                            position = child->GetPositionLocal() + math::Vector3(5.0f, 0.0f, 0.0f);
+                            break;
+                        }
+                    }
                 }
             }
             spline->AddControlPoint(position);
@@ -1708,22 +1824,63 @@ void Properties::ShowSpline(spartan::Spline* spline) const
         ImGui::EndDisabled();
 
         layout::separator();
-        layout::section_header("Road Mesh");
+        layout::section_header("Mesh Generation");
 
-        // road width
-        if (property_float("Width", &road_width, 0.1f, 0.5f, 100.0f, "road width in meters", "%.1f m"))
+        // profile type selector
+        static vector<string> profile_names = { "Road", "Wall", "Tube", "Fence", "Channel" };
+        if (property_combo("Profile", profile_names, &profile, "cross-section shape extruded along the spline"))
+        {
+            spline->SetProfile(static_cast<spartan::SplineProfile>(profile));
+        }
+
+        // width (used by all profiles)
+        if (property_float("Width", &road_width, 0.1f, 0.5f, 100.0f, "width in meters", "%.1f m"))
         {
             spline->SetRoadWidth(road_width);
         }
 
+        // height (used by wall, fence, channel)
+        spartan::SplineProfile current_profile = static_cast<spartan::SplineProfile>(profile);
+        bool needs_height = current_profile == spartan::SplineProfile::Wall ||
+                            current_profile == spartan::SplineProfile::Fence ||
+                            current_profile == spartan::SplineProfile::Channel;
+        if (needs_height)
+        {
+            if (property_float("Height", &height, 0.1f, 0.1f, 100.0f, "height in meters", "%.1f m"))
+            {
+                spline->SetHeight(height);
+            }
+        }
+
+        // thickness (used by wall, fence)
+        bool needs_thickness = current_profile == spartan::SplineProfile::Wall ||
+                               current_profile == spartan::SplineProfile::Fence;
+        if (needs_thickness)
+        {
+            if (property_float("Thickness", &thickness, 0.01f, 0.01f, 10.0f, "thickness in meters", "%.2f m"))
+            {
+                spline->SetThickness(thickness);
+            }
+        }
+
+        // tube sides (only for tube)
+        if (current_profile == spartan::SplineProfile::Tube)
+        {
+            float tube_sides_f = static_cast<float>(tube_sides);
+            if (property_float("Sides", &tube_sides_f, 1.0f, 3.0f, 64.0f, "tube cross-section subdivisions", "%.0f"))
+            {
+                spline->SetTubeSides(static_cast<uint32_t>(tube_sides_f));
+            }
+        }
+
         layout::group_spacing();
 
-        // generate / clear road buttons
-        float road_button_width = 120.0f * spartan::Window::GetDpiScale();
-        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - road_button_width) * 0.5f + ImGui::GetCursorPosX());
+        // generate / clear mesh buttons
+        float gen_button_width = 120.0f * spartan::Window::GetDpiScale();
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - gen_button_width) * 0.5f + ImGui::GetCursorPosX());
 
         ImGui::BeginDisabled(point_count < 2);
-        if (ImGuiSp::button("Generate Road", ImVec2(road_button_width, 0)))
+        if (ImGuiSp::button("Generate", ImVec2(gen_button_width, 0)))
         {
             spline->GenerateRoadMesh();
         }
@@ -1731,12 +1888,123 @@ void Properties::ShowSpline(spartan::Spline* spline) const
 
         if (spline->HasRoadMesh())
         {
-            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - road_button_width) * 0.5f + ImGui::GetCursorPosX());
-            if (ImGuiSp::button("Clear Road", ImVec2(road_button_width, 0)))
+            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - gen_button_width) * 0.5f + ImGui::GetCursorPosX());
+            if (ImGuiSp::button("Clear", ImVec2(gen_button_width, 0)))
             {
                 spline->ClearRoadMesh();
             }
         }
+
+        layout::separator();
+        layout::section_header("Instancing");
+
+        // instance spacing
+        if (property_float("Spacing", &inst_spacing, 0.1f, 0.5f, 100.0f, "distance between instances in meters", "%.1f m"))
+        {
+            spline->SetInstanceSpacing(inst_spacing);
+        }
+
+        // align instances to spline
+        if (property_toggle("Align to Spline", &inst_align, "rotate instances to follow the spline direction"))
+        {
+            spline->SetAlignInstancesToSpline(inst_align);
+        }
+
+        layout::group_spacing();
+
+        // spawn / clear instance buttons
+        float inst_button_width = 120.0f * spartan::Window::GetDpiScale();
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - inst_button_width) * 0.5f + ImGui::GetCursorPosX());
+
+        ImGui::BeginDisabled(point_count < 2);
+        if (ImGuiSp::button("Spawn", ImVec2(inst_button_width, 0)))
+        {
+            spline->SpawnInstances();
+        }
+        ImGui::EndDisabled();
+
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - inst_button_width) * 0.5f + ImGui::GetCursorPosX());
+        if (ImGuiSp::button("Clear Instances", ImVec2(inst_button_width, 0)))
+        {
+            spline->ClearInstances();
+        }
+    }
+    component_end();
+}
+
+void Properties::ShowSplineFollower(spartan::SplineFollower* follower) const
+{
+    if (!follower)
+        return;
+
+    if (component_begin("Spline Follower", design::accent_spline_follower(), follower))
+    {
+        //= REFLECT ========================================
+        float speed         = follower->GetSpeed();
+        uint32_t mode       = static_cast<uint32_t>(follower->GetFollowMode());
+        bool align          = follower->GetAlignToSpline();
+        float progress      = follower->GetProgress();
+        uint64_t spline_id  = follower->GetSplineEntityId();
+        Entity* spline_ent  = follower->GetSplineEntity();
+        //==================================================
+
+        layout::section_header("Spline Reference");
+
+        // build a list of entities that have a spline component
+        const vector<Entity*>& all_entities = World::GetEntities();
+        vector<string> spline_names;
+        vector<uint64_t> spline_ids;
+        uint32_t selected_index = 0;
+
+        // first entry is "none"
+        spline_names.push_back("(none)");
+        spline_ids.push_back(0);
+
+        for (Entity* entity : all_entities)
+        {
+            if (entity && entity->GetComponent<Spline>())
+            {
+                spline_ids.push_back(entity->GetObjectId());
+                spline_names.push_back(entity->GetObjectName());
+
+                if (entity->GetObjectId() == spline_id)
+                {
+                    selected_index = static_cast<uint32_t>(spline_names.size() - 1);
+                }
+            }
+        }
+
+        if (property_combo("Spline", spline_names, &selected_index, "the spline entity to follow"))
+        {
+            follower->SetSplineEntityId(spline_ids[selected_index]);
+        }
+
+        layout::separator();
+        layout::section_header("Movement");
+
+        // speed
+        if (property_float("Speed", &speed, 0.1f, 0.0f, 1000.0f, "movement speed in world units per second", "%.1f"))
+        {
+            follower->SetSpeed(speed);
+        }
+
+        // follow mode
+        static vector<string> mode_names = { "Clamp", "Loop", "Ping Pong" };
+        if (property_combo("Mode", mode_names, &mode, "behavior when reaching the end of the spline"))
+        {
+            follower->SetFollowMode(static_cast<spartan::SplineFollowMode>(mode));
+        }
+
+        // align to spline
+        if (property_toggle("Align To Spline", &align, "orient the entity along the spline tangent"))
+        {
+            follower->SetAlignToSpline(align);
+        }
+
+        // progress (read-only)
+        char progress_buf[32];
+        snprintf(progress_buf, sizeof(progress_buf), "%.1f%%", progress * 100.0f);
+        property_text("Progress", progress_buf, "current position along the spline");
     }
     component_end();
 }
@@ -1874,7 +2142,7 @@ void Properties::ShowVolume(spartan::Volume* volume) const
         // scrollable area of render options
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.2f));
-        
+
         if (ImGui::BeginChild("##vol_overrides", ImVec2(0, 220.0f), true))
         {
             int id_counter = 0;
@@ -1926,9 +2194,147 @@ void Properties::ShowVolume(spartan::Volume* volume) const
             }
         }
         ImGui::EndChild();
-        
+
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
+
+        layout::separator();
+        layout::section_header("Audio Reverb");
+
+        bool reverb_enabled = volume->GetReverbEnabled();
+        property_toggle("Enabled", &reverb_enabled, "apply reverb to audio sources inside this volume (derived from volume size)");
+
+        if (reverb_enabled != volume->GetReverbEnabled())
+            volume->SetReverbEnabled(reverb_enabled);
+    }
+    component_end();
+}
+
+void Properties::ShowParticleSystem(spartan::ParticleSystem* particle_system) const
+{
+    if (!particle_system)
+        return;
+
+    if (component_begin("Particle System", design::accent_particles(), particle_system))
+    {
+        //= REFLECT =====================================================
+        uint32_t max_particles   = particle_system->GetMaxParticles();
+        float emission_rate      = particle_system->GetEmissionRate();
+        float lifetime           = particle_system->GetLifetime();
+        float start_speed        = particle_system->GetStartSpeed();
+        float start_size         = particle_system->GetStartSize();
+        float end_size           = particle_system->GetEndSize();
+        float gravity_modifier   = particle_system->GetGravityModifier();
+        float emission_radius    = particle_system->GetEmissionRadius();
+        m_colorPicker_particle_start->SetColor(particle_system->GetStartColor());
+        m_colorPicker_particle_end->SetColor(particle_system->GetEndColor());
+        //===============================================================
+
+        // preset selector
+        static vector<string> preset_names =
+        {
+            "Custom", "Fire", "Smoke", "Steam", "Sparks", "Dust", "Snow",
+            "Rain", "Confetti", "Fireflies", "Blood", "Magic", "Explosion",
+            "Waterfall", "Embers", "Tire Smoke", "Exhaust"
+        };
+        uint32_t preset_index = static_cast<uint32_t>(particle_system->GetPreset());
+        if (property_combo("Preset", preset_names, &preset_index, "apply a preset to quickly configure the particle system"))
+        {
+            particle_system->ApplyPreset(static_cast<spartan::ParticlePreset>(preset_index));
+
+            // refresh local copies after preset application
+            max_particles    = particle_system->GetMaxParticles();
+            emission_rate    = particle_system->GetEmissionRate();
+            lifetime         = particle_system->GetLifetime();
+            start_speed      = particle_system->GetStartSpeed();
+            start_size       = particle_system->GetStartSize();
+            end_size         = particle_system->GetEndSize();
+            gravity_modifier = particle_system->GetGravityModifier();
+            emission_radius  = particle_system->GetEmissionRadius();
+            m_colorPicker_particle_start->SetColor(particle_system->GetStartColor());
+            m_colorPicker_particle_end->SetColor(particle_system->GetEndColor());
+        }
+
+        layout::separator();
+        layout::section_header("Emission");
+
+        // max particles
+        float max_p_float = static_cast<float>(max_particles);
+        if (property_float("Max Particles", &max_p_float, 100.0f, 100.0f, 100000.0f, "maximum number of particles alive at once", "%.0f"))
+        {
+            particle_system->SetMaxParticles(static_cast<uint32_t>(max_p_float));
+        }
+
+        // emission rate
+        if (property_float("Rate", &emission_rate, 1.0f, 0.0f, 10000.0f, "particles emitted per second", "%.0f /s"))
+        {
+            particle_system->SetEmissionRate(emission_rate);
+        }
+
+        // emission radius
+        if (property_float("Radius", &emission_radius, 0.01f, 0.0f, 100.0f, "sphere emission radius in meters", "%.2f m"))
+        {
+            particle_system->SetEmissionRadius(emission_radius);
+        }
+
+        layout::separator();
+        layout::section_header("Lifetime & Motion");
+
+        // lifetime
+        if (property_float("Lifetime", &lifetime, 0.1f, 0.01f, 60.0f, "particle lifetime in seconds", "%.1f s"))
+        {
+            particle_system->SetLifetime(lifetime);
+        }
+
+        // start speed
+        if (property_float("Start Speed", &start_speed, 0.1f, 0.0f, 100.0f, "initial speed in meters per second", "%.1f m/s"))
+        {
+            particle_system->SetStartSpeed(start_speed);
+        }
+
+        // gravity modifier
+        if (property_float("Gravity", &gravity_modifier, 0.1f, -20.0f, 20.0f, "gravity multiplier (negative = downward)", "%.1f"))
+        {
+            particle_system->SetGravityModifier(gravity_modifier);
+        }
+
+        layout::separator();
+        layout::section_header("Appearance");
+
+        // start size
+        if (property_float("Start Size", &start_size, 0.01f, 0.001f, 10.0f, "particle size at birth in meters", "%.3f m"))
+        {
+            particle_system->SetStartSize(start_size);
+        }
+
+        // end size
+        if (property_float("End Size", &end_size, 0.01f, 0.0f, 10.0f, "particle size at death in meters", "%.3f m"))
+        {
+            particle_system->SetEndSize(end_size);
+        }
+
+        layout::group_spacing();
+
+        // start color
+        ImGui::PushID("particle_start_color");
+        property_color("Start Color", m_colorPicker_particle_start.get(), "particle color at birth");
+        ImGui::PopID();
+
+        // end color
+        ImGui::PushID("particle_end_color");
+        property_color("End Color", m_colorPicker_particle_end.get(), "particle color at death");
+        ImGui::PopID();
+
+        //= MAP ==========================================================
+        if (m_colorPicker_particle_start->GetColor() != particle_system->GetStartColor())
+        {
+            particle_system->SetStartColor(m_colorPicker_particle_start->GetColor());
+        }
+        if (m_colorPicker_particle_end->GetColor() != particle_system->GetEndColor())
+        {
+            particle_system->SetEndColor(m_colorPicker_particle_end->GetColor());
+        }
+        //=================================================================
     }
     component_end();
 }
@@ -2253,6 +2659,11 @@ void Properties::ComponentContextMenu_Add() const
                 entity->AddComponent<Spline>();
             }
 
+            if (ImGui::MenuItem("Spline Follower"))
+            {
+                entity->AddComponent<SplineFollower>();
+            }
+
             ImGui::Dummy(ImVec2(0, design::spacing_sm));
 
             // lighting
@@ -2285,6 +2696,19 @@ void Properties::ComponentContextMenu_Add() const
             if (ImGui::MenuItem("Volume"))
             {
                 entity->AddComponent<Volume>();
+            }
+
+            ImGui::Dummy(ImVec2(0, design::spacing_sm));
+
+            // effects
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+            ImGui::TextUnformatted("EFFECTS");
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Particle System"))
+            {
+                entity->AddComponent<ParticleSystem>();
             }
 
             ImGui::Dummy(ImVec2(0, design::spacing_sm));

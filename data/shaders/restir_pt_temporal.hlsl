@@ -26,18 +26,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 static const float TEMPORAL_MIN_CONFIDENCE = 0.1f;
 
-RWTexture2D<float4> tex_reservoir0 : register(u21);
-RWTexture2D<float4> tex_reservoir1 : register(u22);
-RWTexture2D<float4> tex_reservoir2 : register(u23);
-RWTexture2D<float4> tex_reservoir3 : register(u24);
-RWTexture2D<float4> tex_reservoir4 : register(u25);
-
-Texture2D<float4> tex_reservoir_prev0 : register(t21);
-Texture2D<float4> tex_reservoir_prev1 : register(t22);
-Texture2D<float4> tex_reservoir_prev2 : register(t23);
-Texture2D<float4> tex_reservoir_prev3 : register(t24);
-Texture2D<float4> tex_reservoir_prev4 : register(t25);
-
 bool check_temporal_visibility(float3 shading_pos, float3 shading_normal, float3 sample_hit_pos, float3 sample_hit_normal, float3 prev_shading_pos)
 {
     float3 dir = sample_hit_pos - shading_pos;
@@ -50,7 +38,7 @@ bool check_temporal_visibility(float3 shading_pos, float3 shading_normal, float3
 
     // reject samples behind the surface
     float cos_theta = dot(dir, shading_normal);
-    if (cos_theta <= 0.25f)
+    if (cos_theta <= 0.05f)
         return false;
 
     // reject backfacing samples
@@ -81,7 +69,7 @@ bool check_temporal_visibility(float3 shading_pos, float3 shading_normal, float3
     ray.Origin    = shading_pos + shading_normal * RESTIR_RAY_NORMAL_OFFSET;
     ray.Direction = dir;
     ray.TMin      = RESTIR_RAY_T_MIN;
-    ray.TMax      = dist - RESTIR_RAY_NORMAL_OFFSET;
+    ray.TMax      = max(dist - RESTIR_RAY_NORMAL_OFFSET, RESTIR_RAY_T_MIN);
 
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER> query;
     query.TraceRayInline(tlas, RAY_FLAG_NONE, 0xFF, ray);
@@ -218,7 +206,7 @@ void main_cs(uint3 dispatch_id : SV_DispatchThreadID)
             {
                 // clamp old reservoir radiance to match current path tracer limits
                 // this flushes outlier samples that were generated before clamping was tightened
-                float max_rad = (temporal.sample.path_length > 1) ? 3.0f : 5.0f;
+                float max_rad = (temporal.sample.path_length > 1) ? 10.0f : 15.0f;
                 temporal.sample.radiance = min(temporal.sample.radiance, float3(max_rad, max_rad, max_rad));
                 float temp_lum = dot(temporal.sample.radiance, float3(0.299f, 0.587f, 0.114f));
                 if (temp_lum > max_rad)

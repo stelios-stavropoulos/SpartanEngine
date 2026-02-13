@@ -789,7 +789,7 @@ namespace spartan
             static array<VkDescriptorPoolSize, 7> pool_sizes =
             {
                 VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_SAMPLER,                    32 * rhi_max_descriptor_set_count },
-                VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,              32 * rhi_max_descriptor_set_count },
+                VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,              rhi_max_array_size + 32 * rhi_max_descriptor_set_count },
                 VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,              rhi_max_array_size * rhi_max_descriptor_set_count },
                 VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             32 * rhi_max_descriptor_set_count },
                 VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,     32 * rhi_max_descriptor_set_count },
@@ -1003,6 +1003,7 @@ namespace spartan
                 { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, rhi_shader_register_shift_t, 16, 1,                  "material_parameters" }, // MaterialParameters
                 { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, rhi_shader_register_shift_t, 17, 1,                  "light_parameters"    }, // LightParameters
                 { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, rhi_shader_register_shift_t, 18, 1,                  "aabbs"               }, // Aabbs
+                { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, rhi_shader_register_shift_t, 19, 1,                  "draw_data"           }, // DrawData
                 { VK_DESCRIPTOR_TYPE_SAMPLER,        rhi_shader_register_shift_s, 0,  1,                  "samplers_comparison" }, // SamplersComparison
                 { VK_DESCRIPTOR_TYPE_SAMPLER,        rhi_shader_register_shift_s, 1,  8,                  "samplers_regular"    }, // SamplersRegular
             };
@@ -1179,6 +1180,7 @@ namespace spartan
         VkPhysicalDeviceVulkan14Features features_1_4                                = {};
         VkPhysicalDeviceVulkan13Features features_1_3                                = {};
         VkPhysicalDeviceVulkan12Features features_1_2                                = {};
+        VkPhysicalDeviceVulkan11Features features_1_1                                = {};
         VkPhysicalDeviceFragmentShadingRateFeaturesKHR features_vrs                  = {};
         VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT features_mutable_descriptor = {}; // xess
         VkPhysicalDeviceRayQueryFeaturesKHR features_ray_query                       = {};
@@ -1192,8 +1194,10 @@ namespace spartan
             features_vrs.pNext                  = nullptr;
             features_robustness.sType           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT;
             features_robustness.pNext           = &features_vrs;
+            features_1_1.sType                  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+            features_1_1.pNext                  = &features_robustness;
             features_1_2.sType                  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-            features_1_2.pNext                  = &features_robustness;
+            features_1_2.pNext                  = &features_1_1;
             features_1_3.sType                  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
             features_1_3.pNext                  = &features_1_2;
             features_1_4.sType                  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
@@ -1215,9 +1219,12 @@ namespace spartan
             VkPhysicalDeviceRobustness2FeaturesEXT support_robustness                   = {};
             support_robustness.sType                                                    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT;
             support_robustness.pNext                                                    = &support_vrs;
+            VkPhysicalDeviceVulkan11Features support_1_1                                = {};
+            support_1_1.sType                                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+            support_1_1.pNext                                                           = &support_robustness;
             VkPhysicalDeviceVulkan12Features support_1_2                                = {};
             support_1_2.sType                                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-            support_1_2.pNext                                                           = &support_robustness;
+            support_1_2.pNext                                                           = &support_1_1;
             VkPhysicalDeviceVulkan13Features support_1_3                                = {};
             support_1_3.sType                                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
             support_1_3.pNext                                                           = &support_1_2;
@@ -1289,6 +1296,22 @@ namespace spartan
                     // pipeline statistics
                     SP_ASSERT(support.features.pipelineStatisticsQuery == VK_TRUE);
                     features.features.pipelineStatisticsQuery = VK_TRUE;
+
+                    // gpu-driven indirect drawing
+                    SP_ASSERT(support.features.multiDrawIndirect == VK_TRUE);
+                    features.features.multiDrawIndirect = VK_TRUE;
+                    SP_ASSERT(support.features.drawIndirectFirstInstance == VK_TRUE);
+                    features.features.drawIndirectFirstInstance = VK_TRUE;
+                    SP_ASSERT(support_1_2.drawIndirectCount == VK_TRUE);
+                    features_1_2.drawIndirectCount = VK_TRUE;
+                    SP_ASSERT(support_1_1.shaderDrawParameters == VK_TRUE);
+                    features_1_1.shaderDrawParameters = VK_TRUE;
+
+                    // storage buffer access from vertex and fragment shaders (needed for bindless draw data)
+                    SP_ASSERT(support.features.vertexPipelineStoresAndAtomics == VK_TRUE);
+                    features.features.vertexPipelineStoresAndAtomics = VK_TRUE;
+                    SP_ASSERT(support.features.fragmentStoresAndAtomics == VK_TRUE);
+                    features.features.fragmentStoresAndAtomics = VK_TRUE;
                 }
 
                 // quality of life improvements
@@ -1910,41 +1933,49 @@ namespace spartan
         return VkDescriptorType::VK_DESCRIPTOR_TYPE_MAX_ENUM;
     }
 
-    void RHI_Device::UpdateBindlessResources(
-        array<RHI_Texture*, rhi_max_array_size>* material_textures,
-        RHI_Buffer* material_parameters,
-        RHI_Buffer* light_parameters,
-        const array<shared_ptr<RHI_Sampler>, static_cast<uint32_t>(Renderer_Sampler::Max)>* samplers,
-        RHI_Buffer* bindless_aabbs
-    )
+    void RHI_Device::UpdateBindlessMaterials(array<RHI_Texture*, rhi_max_array_size>* textures, RHI_Buffer* parameters)
     {
-        // samplers
+        if (textures)
+        {
+            descriptors::bindless::update_textures(textures);
+        }
+
+        if (parameters)
+        {
+            descriptors::bindless::update_buffer(RHI_Device_Bindless_Resource::MaterialParameters, parameters);
+        }
+    }
+
+    void RHI_Device::UpdateBindlessLights(RHI_Buffer* parameters)
+    {
+        if (parameters)
+        {
+            descriptors::bindless::update_buffer(RHI_Device_Bindless_Resource::LightParameters, parameters);
+        }
+    }
+
+    void RHI_Device::UpdateBindlessSamplers(const array<shared_ptr<RHI_Sampler>, static_cast<uint32_t>(Renderer_Sampler::Max)>* samplers)
+    {
         if (samplers)
         {
             descriptors::bindless::update_samplers(RHI_Device_Bindless_Resource::SamplersComparison, &(*samplers)[0], 1);
             descriptors::bindless::update_samplers(RHI_Device_Bindless_Resource::SamplersRegular, &(*samplers)[1], 8);
         }
+    }
 
-        // lights
-        if (light_parameters)
+    void RHI_Device::UpdateBindlessAABBs(RHI_Buffer* buffer)
+    {
+        if (buffer)
         {
-            descriptors::bindless::update_buffer(RHI_Device_Bindless_Resource::LightParameters, light_parameters);
+            descriptors::bindless::update_buffer(RHI_Device_Bindless_Resource::Aabbs, buffer);
         }
+    }
 
-        // materials (textures and parameters)
-        if (material_textures)
+    void RHI_Device::UpdateBindlessDrawData(RHI_Buffer* buffer)
+    {
+        if (buffer)
         {
-            descriptors::bindless::update_textures(material_textures);
-        }
-        if (material_parameters)
-        {
-            descriptors::bindless::update_buffer(RHI_Device_Bindless_Resource::MaterialParameters, material_parameters);
-        }
-
-        // aabbs
-        if (bindless_aabbs)
-        {
-            descriptors::bindless::update_buffer(RHI_Device_Bindless_Resource::Aabbs, bindless_aabbs);
+            descriptors::bindless::update_buffer(RHI_Device_Bindless_Resource::DrawData, buffer);
         }
     }
 

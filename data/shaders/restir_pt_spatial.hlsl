@@ -24,21 +24,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "restir_reservoir.hlsl"
 //==============================
 
-static const float SPATIAL_RADIUS_MIN  = 4.0f;
-static const float SPATIAL_RADIUS_MAX  = 16.0f;
+static const float SPATIAL_RADIUS_MIN  = 8.0f;
+static const float SPATIAL_RADIUS_MAX  = 32.0f;
 static const float SPATIAL_DEPTH_SCALE = 0.5f;
-
-Texture2D<float4> tex_reservoir_in0 : register(t21);
-Texture2D<float4> tex_reservoir_in1 : register(t22);
-Texture2D<float4> tex_reservoir_in2 : register(t23);
-Texture2D<float4> tex_reservoir_in3 : register(t24);
-Texture2D<float4> tex_reservoir_in4 : register(t25);
-
-RWTexture2D<float4> tex_reservoir0 : register(u21);
-RWTexture2D<float4> tex_reservoir1 : register(u22);
-RWTexture2D<float4> tex_reservoir2 : register(u23);
-RWTexture2D<float4> tex_reservoir3 : register(u24);
-RWTexture2D<float4> tex_reservoir4 : register(u25);
 
 static const float2 SPATIAL_OFFSETS[16] = {
     float2(-0.7071, -0.7071), float2( 0.9239,  0.3827),
@@ -62,7 +50,7 @@ bool check_spatial_visibility(float3 center_pos, float3 center_normal, float3 sa
     dir /= dist;
 
     float cos_theta = dot(dir, center_normal);
-    if (cos_theta <= 0.25f)
+    if (cos_theta <= 0.05f)
         return false;
 
     float cos_back = dot(sample_hit_normal, -dir);
@@ -90,7 +78,7 @@ bool check_spatial_visibility(float3 center_pos, float3 center_normal, float3 sa
     ray.Origin    = center_pos + center_normal * RESTIR_RAY_NORMAL_OFFSET;
     ray.Direction = dir;
     ray.TMin      = RESTIR_RAY_T_MIN;
-    ray.TMax      = dist - RESTIR_RAY_NORMAL_OFFSET;
+    ray.TMax      = max(dist - RESTIR_RAY_NORMAL_OFFSET, RESTIR_RAY_T_MIN);
 
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER> query;
     query.TraceRayInline(tlas, RAY_FLAG_NONE, 0xFF, ray);
@@ -152,7 +140,7 @@ float evaluate_jacobian_for_reuse(PathSample sample, float3 center_pos, float3 c
 
     dir_to_sample = dir_to_sample * rsqrt(dist_sq);
     float cos_theta = dot(center_normal, dir_to_sample);
-    if (cos_theta <= 0.25f)
+    if (cos_theta <= 0.05f)
         return 0.0f;
 
     float jacobian = compute_jacobian(sample.hit_position, neighbor_pos, center_pos, sample.hit_normal, center_normal);
@@ -214,11 +202,11 @@ void main_cs(uint3 dispatch_id : SV_DispatchThreadID)
     float metallic  = material.g;
 
     Reservoir center = unpack_reservoir(
-        tex_reservoir_in0[pixel],
-        tex_reservoir_in1[pixel],
-        tex_reservoir_in2[pixel],
-        tex_reservoir_in3[pixel],
-        tex_reservoir_in4[pixel]
+        tex_reservoir_prev0[pixel],
+        tex_reservoir_prev1[pixel],
+        tex_reservoir_prev2[pixel],
+        tex_reservoir_prev3[pixel],
+        tex_reservoir_prev4[pixel]
     );
 
     if (!is_reservoir_valid(center))
@@ -241,6 +229,10 @@ void main_cs(uint3 dispatch_id : SV_DispatchThreadID)
     combined.target_pdf = target_pdf_center;
 
     float base_angle = random_float(seed) * 2.0f * PI;
+
+    // track neighbor radiance as fallback for dark pixels
+    float3 neighbor_radiance_sum = float3(0, 0, 0);
+    float  neighbor_radiance_count = 0;
 
     // spatial reuse loop
     for (uint i = 0; i < RESTIR_SPATIAL_SAMPLES; i++)
@@ -266,11 +258,11 @@ void main_cs(uint3 dispatch_id : SV_DispatchThreadID)
         float3 neighbor_pos_ws = get_position(neighbor_uv);
 
         Reservoir neighbor = unpack_reservoir(
-            tex_reservoir_in0[neighbor_pixel],
-            tex_reservoir_in1[neighbor_pixel],
-            tex_reservoir_in2[neighbor_pixel],
-            tex_reservoir_in3[neighbor_pixel],
-            tex_reservoir_in4[neighbor_pixel]
+            tex_reservoir_prev0[neighbor_pixel],
+            tex_reservoir_prev1[neighbor_pixel],
+            tex_reservoir_prev2[neighbor_pixel],
+            tex_reservoir_prev3[neighbor_pixel],
+            tex_reservoir_prev4[neighbor_pixel]
         );
 
         if (!is_reservoir_valid(neighbor))
@@ -282,8 +274,16 @@ void main_cs(uint3 dispatch_id : SV_DispatchThreadID)
         if (all(neighbor.sample.radiance <= 0.0f))
             continue;
 
+        // accumulate neighbor gi for fallback
+        float3 nb_gi = neighbor.sample.radiance * neighbor.W;
+        if (!any(isnan(nb_gi)) && !any(isinf(nb_gi)) && dot(nb_gi, float3(0.299f, 0.587f, 0.114f)) > 0.0f)
+        {
+            neighbor_radiance_sum   += nb_gi;
+            neighbor_radiance_count += 1.0f;
+        }
+
         // clamp neighbor radiance to match current path tracer limits
-        float max_rad = (neighbor.sample.path_length > 1) ? 3.0f : 5.0f;
+        float max_rad = (neighbor.sample.path_length > 1) ? 10.0f : 15.0f;
         neighbor.sample.radiance = min(neighbor.sample.radiance, float3(max_rad, max_rad, max_rad));
         float nb_lum = dot(neighbor.sample.radiance, float3(0.299f, 0.587f, 0.114f));
         if (nb_lum > max_rad)
@@ -366,6 +366,15 @@ void main_cs(uint3 dispatch_id : SV_DispatchThreadID)
 
     float3 gi = combined.sample.radiance * combined.W;
     gi = soft_clamp_gi(gi, combined.sample);
+
+    // if the pixel ended up nearly black, use the average neighbor gi as fallback
+    float gi_lum = dot(gi, float3(0.299f, 0.587f, 0.114f));
+    if (gi_lum < 0.001f && neighbor_radiance_count > 0.0f)
+    {
+        float3 fallback = neighbor_radiance_sum / neighbor_radiance_count;
+        fallback = soft_clamp_gi(fallback, combined.sample);
+        gi = fallback;
+    }
 
     tex_uav[pixel] = float4(gi, 1.0f);
 }

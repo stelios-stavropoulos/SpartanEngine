@@ -19,7 +19,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-//= INCLUDES ===========
+//= INCLUDES ==============
 #include "pch.h"
 #include "Component.h"
 #include "AudioSource.h"
@@ -30,8 +30,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Spline.h"
 #include "Terrain.h"
 #include "Volume.h"
+#include "SplineFollower.h"
+#include "ParticleSystem.h"
 #include "ParticleSystemCPU.h"
-//======================
+//=========================
 
 //= NAMESPACES =====
 using namespace std;
