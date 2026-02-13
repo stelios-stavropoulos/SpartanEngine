@@ -30,7 +30,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "World/Components/Physics.h"
 #include "World/Components/Terrain.h"
 #include "World/Components/Camera.h"
-#include "World/Components/ParticleSystem.h"
+#include "World/Components/ParticleSystemCPU.h"
 #include "Commands/CommandStack.h"
 #include "Commands/CommandEntityDelete.h"
 #include "Input/Input.h"
@@ -857,9 +857,9 @@ void WorldViewer::PopupContextMenu() const
     }
 
     // TERRAIN
-    if (ImGui::MenuItem("Particle System"))
+    if (ImGui::MenuItem("Particle System (CPU)"))
     {
-        ActionEntityCreateParticleSystem();
+        ActionEntityCreateParticleSystemCPU();
     }
 
     ImGui::EndPopup();
@@ -1145,9 +1145,9 @@ void WorldViewer::ActionEntityCreateAudioSource()
     entity->SetObjectName("Physics");
 }
 
-void WorldViewer::ActionEntityCreateParticleSystem()
+void WorldViewer::ActionEntityCreateParticleSystemCPU()
 {
     auto entity = ActionEntityCreateEmpty();
-    entity->AddComponent<spartan::ParticleSystem>();
+    entity->AddComponent<spartan::ParticleSystemCPU>();
     entity->SetObjectName("Particle System");
 }

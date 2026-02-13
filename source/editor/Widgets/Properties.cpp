@@ -41,7 +41,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Rendering/Renderer.h"
 #include "World/Components/Script.h"
 
-#include "../runtime/World/Components/ParticleSystem.h"
+#include "../runtime/World/Components/ParticleSystemCPU.h"
 #include "../runtime/ParticleSystem/Emitter.h"
 #include "EmitterViewer.h"
 
@@ -95,18 +95,18 @@ namespace
         constexpr float section_gap    = 6.0f;
 
         // component accent colors (subtle, professional)
-        inline ImVec4 accent_entity()     { return ImVec4(0.45f, 0.55f, 0.70f, 1.0f); }
-        inline ImVec4 accent_light()      { return ImVec4(0.85f, 0.75f, 0.35f, 1.0f); }
-        inline ImVec4 accent_camera()     { return ImVec4(0.50f, 0.70f, 0.55f, 1.0f); }
-        inline ImVec4 accent_renderable() { return ImVec4(0.60f, 0.50f, 0.70f, 1.0f); }
-        inline ImVec4 accent_material()   { return ImVec4(0.70f, 0.55f, 0.50f, 1.0f); }
-        inline ImVec4 accent_physics()    { return ImVec4(0.55f, 0.65f, 0.80f, 1.0f); }
-        inline ImVec4 accent_audio()      { return ImVec4(0.70f, 0.45f, 0.55f, 1.0f); }
-        inline ImVec4 accent_terrain()    { return ImVec4(0.50f, 0.70f, 0.45f, 1.0f); }
-        inline ImVec4 accent_volume()     { return ImVec4(0.55f, 0.55f, 0.75f, 1.0f); }
-        inline ImVec4 accent_spline()     { return ImVec4(0.30f, 0.75f, 0.70f, 1.0f); }
-        inline ImVec4 accent_script()     { return ImVec4(0.60f, 0.70f, 0.50f, 1.0f); }
-        inline ImVec4 accent_particle_system()     { return ImVec4(0.60f, 0.60f, 0.1f, 1.0f); }
+        inline ImVec4 accent_entity()                   { return ImVec4(0.45f, 0.55f, 0.70f, 1.0f); }
+        inline ImVec4 accent_light()                    { return ImVec4(0.85f, 0.75f, 0.35f, 1.0f); }
+        inline ImVec4 accent_camera()                   { return ImVec4(0.50f, 0.70f, 0.55f, 1.0f); }
+        inline ImVec4 accent_renderable()               { return ImVec4(0.60f, 0.50f, 0.70f, 1.0f); }
+        inline ImVec4 accent_material()                 { return ImVec4(0.70f, 0.55f, 0.50f, 1.0f); }
+        inline ImVec4 accent_physics()                  { return ImVec4(0.55f, 0.65f, 0.80f, 1.0f); }
+        inline ImVec4 accent_audio()                    { return ImVec4(0.70f, 0.45f, 0.55f, 1.0f); }
+        inline ImVec4 accent_terrain()                  { return ImVec4(0.50f, 0.70f, 0.45f, 1.0f); }
+        inline ImVec4 accent_volume()                   { return ImVec4(0.55f, 0.55f, 0.75f, 1.0f); }
+        inline ImVec4 accent_spline()                   { return ImVec4(0.30f, 0.75f, 0.70f, 1.0f); }
+        inline ImVec4 accent_script()                   { return ImVec4(0.60f, 0.70f, 0.50f, 1.0f); }
+        inline ImVec4 accent_particle_system_CPU()      { return ImVec4(0.60f, 0.60f, 0.1f, 1.0f); }
 
         // helper to get dimmed version for backgrounds
         inline ImVec4 dimmed(const ImVec4& color, float factor = 0.15f)
@@ -635,7 +635,7 @@ void Properties::OnTickVisible()
             ShowTerrain(entity->GetComponent<Terrain>());
             ShowSpline(entity->GetComponent<Spline>());
             ShowAudioSource(entity->GetComponent<AudioSource>());
-            ShowParticleSystem(entity->GetComponent<ParticleSystem>());
+            ShowParticleSystemCPU(entity->GetComponent<ParticleSystemCPU>());
 
             // re-fetch after ShowSpline since clearing a road mesh removes the renderable
             Renderable* renderable = entity->GetComponent<Renderable>();
@@ -1933,19 +1933,19 @@ void Properties::ShowVolume(spartan::Volume* volume) const
     component_end();
 }
 
-void Properties::ShowParticleSystem(spartan::ParticleSystem* particle_system) const
+void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_system_CPU) const
 {
-    if (!particle_system)
+    if (!particle_system_CPU)
         return;
 
-    if (!component_begin("Particle System", design::accent_particle_system(),particle_system))
+    if (!component_begin("Particle System", design::accent_particle_system_CPU(), particle_system_CPU))
         return;
 
     ImGui::Separator();
 
-    for (size_t i = 0; i < particle_system->emitters.size();)
+    for (size_t i = 0; i < particle_system_CPU->emitters.size();)
     {
-        Emitter* emitter = particle_system->emitters[i];
+        Emitter* emitter = particle_system_CPU->emitters[i];
 
         ImGui::PushID(emitter);
 
@@ -1972,8 +1972,8 @@ void Properties::ShowParticleSystem(spartan::ParticleSystem* particle_system) co
         if (ImGui::Button("X"))
         {
             delete emitter;
-            particle_system->emitters.erase(
-                particle_system->emitters.begin() + i
+            particle_system_CPU->emitters.erase(
+                particle_system_CPU->emitters.begin() + i
             );
 
             ImGui::PopID();
@@ -2174,7 +2174,7 @@ void Properties::ShowParticleSystem(spartan::ParticleSystem* particle_system) co
 
     if (ImGui::Button("Add Emitter", ImVec2(-1, 0)))
     {
-        particle_system->emitters.push_back(new Emitter());
+        particle_system_CPU->emitters.push_back(new Emitter());
     }
 
     component_end();
@@ -2311,7 +2311,7 @@ void Properties::ComponentContextMenu_Add() const
 
             if (ImGui::MenuItem("Particle System"))
             {
-                entity->AddComponent<ParticleSystem>();
+                entity->AddComponent<ParticleSystemCPU>();
             }
         }
 

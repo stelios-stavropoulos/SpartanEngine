@@ -55,7 +55,7 @@ namespace spartan
         X(Terrain,          terrain)      \
         X(Volume,           volume)       \
         X(Script,           script)       \
-        X(ParticleSystem,   particle_system)
+        X(ParticleSystemCPU,   particle_system_CPU)
 
     enum class ComponentType : uint32_t
     {

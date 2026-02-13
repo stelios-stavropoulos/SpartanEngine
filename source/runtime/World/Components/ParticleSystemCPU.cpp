@@ -19,27 +19,43 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#pragma once
-
-//= INCLUDES =================================
-#include "Component.h"
-#include <vector>
-//============================================
+//= INCLUDES ================================
+#include "pch.h"
+#include "ParticleSystemCPU.h"
+#include "../../ParticleSystem/Emitter.h"
+#include "../../World/Entity.h"
+#include "../../Profiling/Profiler.h"
+//===========================================
 
 namespace spartan
 {
-    class Emitter;
 
-    class ParticleSystem : public Component
+    spartan::ParticleSystemCPU::ParticleSystemCPU(Entity* entity) : Component(entity)
     {
-    public:
-        std::vector<Emitter*> emitters;
+        SP_REGISTER_ATTRIBUTE_VALUE_VALUE(emitters, std::vector<Emitter* >);
+    }
 
-    public:
-        ParticleSystem(Entity* entity);
-        ~ParticleSystem();
+    ParticleSystemCPU::~ParticleSystemCPU()
+    {
+        for (Emitter* emitter : emitters)
+        {
+            delete emitter; // replace
+        }
+        emitters.clear();
+    }
 
-        // icomponent
-        void Tick() override;
-    };
+    void spartan::ParticleSystemCPU::Tick()
+    {
+        SP_PROFILE_CPU_START("Particle System")
+
+            const double dt = Timer::GetDeltaTimeSec();
+
+        for (Emitter* emitter : emitters)
+        {
+            emitter->Update(dt);
+        }
+
+        SP_PROFILE_CPU_END()
+    }
+
 }
