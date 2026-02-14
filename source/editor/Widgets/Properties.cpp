@@ -1575,6 +1575,12 @@ void Properties::ShowMaterial(Material* material) const
             material->SetProperty(MaterialProperty::WorldSpaceUv, world_space_uv ? 1.0f : 0.0f);
         }
 
+        bool billboard = material->GetProperty(MaterialProperty::IsBillboard) != 0.0f;
+        if (property_toggle("Billboard", &billboard, "make the mesh always face the camera, works for quads"))
+        {
+            material->SetProperty(MaterialProperty::IsBillboard, billboard ? 1.0f : 0.0f);
+        }
+
         //= MAP ===============================================================================
         material->SetProperty(MaterialProperty::TextureTilingX, tiling.x);
         material->SetProperty(MaterialProperty::TextureTilingY, tiling.y);

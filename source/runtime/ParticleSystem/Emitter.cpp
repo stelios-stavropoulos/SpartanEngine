@@ -24,6 +24,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "Emitter.h"
 #include "EmitterModule.h"
 #include "../Rendering/Renderer.h"
+#include "../Rendering/Material.h"
 #include <RHI/RHI_Texture.h>
 #include "../Resource/ResourceCache.h"
 #include "../World/Components/Renderable.h"
@@ -34,8 +35,11 @@ namespace spartan
     Emitter::Emitter(Renderable* renderable)
     {
         renderable->SetMesh(MeshType::Quad);
-        renderable->SetMaterial(Renderer::GetStandardMaterial());
-        
+        std::shared_ptr<Material> material = std::make_shared<Material>();
+        material->LoadFromFile(std::string(ResourceCache::GetProjectDirectory()) + "materials/ParticleDefault" + std::string(EXTENSION_MATERIAL));
+
+        renderable->SetMaterial(material);
+
         ChangeSpawnRate(spawn_rate);
 
         renderable->SetInstances(transforms);

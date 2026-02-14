@@ -56,6 +56,7 @@ namespace spartan
         WorldWidth,                 // width of the mesh
         WorldSpaceUv,               // use world-space uvs
         Tessellation,               // enable tessellation
+        IsBillboard,                // quad billboard
     
         // core pbr
         ColorR,                     // base color red
@@ -92,7 +93,6 @@ namespace spartan
         WindAnimation,              // vertex wind animation
         ColorVariationFromInstance, // per-instance color variation
         IsWater,                    // water flow animation
-        IsBillboard,                // quad billboard
     
         // render settings
         CullMode,                   // face culling mode

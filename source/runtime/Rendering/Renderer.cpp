@@ -1047,6 +1047,7 @@ namespace spartan
                 properties[count].sheen                 = material->GetProperty(MaterialProperty::Sheen);
                 properties[count].subsurface_scattering = material->GetProperty(MaterialProperty::SubsurfaceScattering);
                 properties[count].world_space_uv        = material->GetProperty(MaterialProperty::WorldSpaceUv);
+                //properties[count].is_billboard          = material->GetProperty(MaterialProperty::IsBillboard);
 
                 // flags
                 properties[count].flags  = material->HasTextureOfType(MaterialTextureType::Height)             ? (1U << 0)  : 0;
@@ -1063,9 +1064,9 @@ namespace spartan
                 properties[count].flags |= material->GetProperty(MaterialProperty::IsGrassBlade)               ? (1U << 11) : 0;
                 properties[count].flags |= material->GetProperty(MaterialProperty::IsFlower)                   ? (1U << 12) : 0;
                 properties[count].flags |= material->GetProperty(MaterialProperty::IsWater)                    ? (1U << 13) : 0;
-                properties[count].flags |= material->GetProperty(MaterialProperty::IsBillboard)                ? (1U << 14) : 0;
-                properties[count].flags |= material->GetProperty(MaterialProperty::Tessellation)               ? (1U << 15) : 0;
-                properties[count].flags |= material->GetProperty(MaterialProperty::EmissiveFromAlbedo)         ? (1U << 16) : 0;
+                properties[count].flags |= material->GetProperty(MaterialProperty::Tessellation)               ? (1U << 14) : 0;
+                properties[count].flags |= material->GetProperty(MaterialProperty::EmissiveFromAlbedo)         ? (1U << 15) : 0;
+                properties[count].flags |= material->GetProperty(MaterialProperty::IsBillboard)                ? (1U << 16) : 0;
                 // when changing the bit flags, ensure that you also update the Surface struct in common_structs.hlsl, so that it reads those flags as expected
             }
     

@@ -89,7 +89,7 @@ namespace spartan
                 case MaterialProperty::WindAnimation:              return "wind_animation";
                 case MaterialProperty::ColorVariationFromInstance: return "color_variation_from_instance";
                 case MaterialProperty::IsWater:                    return "vertex_animate_water";
-                case MaterialProperty::IsBillboard:                return "vertex_billboard";
+                case MaterialProperty::IsBillboard:                return "is_billboard";
         
                 // Render settings
                 case MaterialProperty::CullMode:                   return "cull_mode";

@@ -801,7 +801,8 @@ namespace spartan
 
         // create absolute paths
         const filesystem::path p = filesystem::absolute(path);
-        const filesystem::path r = filesystem::absolute(GetWorkingDirectory());
+        const filesystem::path r = filesystem::absolute(GetWorkingDirectory
+        ());
 
         // if root paths are different, return absolute path
         if( p.root_path() != r.root_path())

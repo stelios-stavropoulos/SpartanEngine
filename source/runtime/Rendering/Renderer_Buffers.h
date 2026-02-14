@@ -147,7 +147,7 @@ namespace spartan
         float sheen;
         float local_height   = 0.0f;
         float world_space_uv = 0.0f;
-        float padding2;
+        float padding1;
 
         float anisotropic;
         float anisotropic_rotation;
