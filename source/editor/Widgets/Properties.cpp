@@ -2580,7 +2580,8 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
 
     if (ImGui::Button("Add Emitter", ImVec2(-1, 0)))
     {
-        particle_system_CPU->emitters.push_back(new Emitter());
+        Renderable* renderable = particle_system_CPU->GetEntity()->AddComponent<Renderable>();
+        particle_system_CPU->emitters.push_back(new Emitter(renderable));
     }
 
     component_end();

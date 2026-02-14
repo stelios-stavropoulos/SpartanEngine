@@ -26,13 +26,21 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "../Rendering/Renderer.h"
 #include <RHI/RHI_Texture.h>
 #include "../Resource/ResourceCache.h"
+#include "../World/Components/Renderable.h"
 //===========================================
 
 namespace spartan
 {
-    Emitter::Emitter()
+    Emitter::Emitter(Renderable* renderable)
     {
+        renderable->SetMesh(MeshType::Quad);
+        renderable->SetMaterial(Renderer::GetStandardMaterial());
+        
         ChangeSpawnRate(spawn_rate);
+
+        renderable->SetInstances(transforms);
+
+        this->renderable = renderable;
 
         particle_texture = new RHI_Texture(ResourceCache::GetResourceDirectory(ResourceDirectory::Textures) + "/particle.png");
     }
@@ -57,6 +65,8 @@ namespace spartan
         }
 
         particle_data.particles.resize(particle_data.max_particle_count);
+
+        transforms.resize(particle_data.max_particle_count);
     }
 
     void Emitter::InitializeParticles(uint32_t start_index, uint32_t end_index)
@@ -102,12 +112,16 @@ namespace spartan
                     8,
                     particle_data.particles[i].color
                 );
- 
+
+                transforms[i] = math::Matrix::CreateTranslation(particle_data.particles[i].position);
+
                 //Renderer::DrawIconAtPosition(particle_texture, particle_data.particles[i].position);
 
                 ++i;
             }
         }
+
+        renderable->SetInstances(transforms);
 
         for (EmitterModule* module : update_modules)
         {

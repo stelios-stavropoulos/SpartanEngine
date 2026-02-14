@@ -29,6 +29,7 @@ namespace spartan
 {
     class EmitterModule;
     class RHI_Texture;
+    class Renderable;
 
     class Emitter
     {
@@ -43,8 +44,11 @@ namespace spartan
 
         RHI_Texture* particle_texture;
 
+        std::vector<math::Matrix> transforms;
+        Renderable* renderable;
+
     public:
-        Emitter();
+        Emitter(Renderable* renderable);
         ~Emitter();
 
         void ChangeSpawnRate(const float new_spawn_rate);

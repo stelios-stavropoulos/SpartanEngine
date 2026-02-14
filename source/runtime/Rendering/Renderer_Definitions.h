@@ -262,6 +262,9 @@ namespace spartan
         particle_emit_c,
         particle_simulate_c,
         particle_render_c,
+        // cpu-driven particles
+        //particle_cpu_v,
+        //particle_cpu_p,
         max
     };
     
