@@ -21,48 +21,50 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //= INCLUDES ======================
 #include "pch.h"
-#include "EM_SetColor.h"
+#include "EM_SetScale.h"
 #include "../ParticleData.h"
 //=================================
 
 namespace spartan
 {
-    void EM_SetColor::OnInitialize(ParticleData& particle_data, uint32_t start_index, uint32_t end_index)
+    void EM_SetScale::OnInitialize(ParticleData& particle_data, uint32_t start_index, uint32_t end_index)
     {
-        if (color.type == particle_property_type::CONSTANT)
+        if (scale.type == particle_property_type::CONSTANT)
         {
-            Color color_constant = color.GetConstValue();
+            const math::Vector2 scale_constant = scale.GetConstValue();
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.particles[i].color = color_constant;
+                particle_data.particles[i].scale = scale_constant;
             }
         }
-        else if (color.type == particle_property_type::RANGE)
+        else if (scale.type == particle_property_type::RANGE)
         {
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                Color color_ranged = color.GetRandomRangedValue();
-                particle_data.particles[i].color = color_ranged;
+                const math::Vector2 scale_range = scale.GetRandomRangedValue();
+                particle_data.particles[i].scale = scale_range;
             }
         }
     }
 
-    void spartan::EM_SetColor::OnUpdate(ParticleData& particle_data, const double& delta_time)
+    void EM_SetScale::OnUpdate(ParticleData& particle_data, const double& delta_time)
     {
-        if (color.type == particle_property_type::CONSTANT)
+        if (scale.type == particle_property_type::CONSTANT)
         {
-            Color color_constant = color.GetConstValue();
+            const math::Vector2 scale_constant = scale.GetConstValue();
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                particle_data.particles[i].color = color_constant;
+                particle_data.particles[i].scale += scale_constant;
             }
         }
-        else if (color.type == particle_property_type::RANGE)
+        else if (scale.type == particle_property_type::RANGE)
         {
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                Color curr_color = Color::Lerp(color.range_value.first, color.range_value.second, particle_data.particles[i].normalized_lifetime);
-                particle_data.particles[i].color = curr_color;
+                float normalized_lifetime = particle_data.particles[i].normalized_lifetime;
+                float x = std::lerp(scale.range_value.first.x, scale.range_value.second.x, normalized_lifetime);
+                float y = std::lerp(scale.range_value.first.y, scale.range_value.second.y, normalized_lifetime);
+                particle_data.particles[i].scale += math::Vector2( x, y );
             }
         }
     }

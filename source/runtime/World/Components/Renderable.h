@@ -90,6 +90,7 @@ namespace spartan
         math::Matrix GetInstance(const uint32_t index, const bool to_world);
         void SetInstances(const std::vector<Instance>& instances);
         void SetInstances(const std::vector<math::Matrix>& transforms);
+        void SetParticleInstances(const std::vector<Instance>& instances);
 
         // render distance
         float GetMaxRenderDistance() const                         { return m_max_distance_render; }

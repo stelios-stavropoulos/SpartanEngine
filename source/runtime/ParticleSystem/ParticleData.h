@@ -34,6 +34,7 @@ namespace spartan
         Color color;
         float lifetime;
         float normalized_lifetime; // 0.0 at birth, 1.0 at death
+        math::Vector2 scale;
     };
     struct ParticleData
     {

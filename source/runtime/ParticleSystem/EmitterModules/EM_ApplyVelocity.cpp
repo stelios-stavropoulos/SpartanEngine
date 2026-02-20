@@ -43,7 +43,7 @@ namespace spartan
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
                 particle_data.particles[i].position += particle_data.particles[i].velocity * static_cast<float>(delta_time);
-                float damping_value = damping.GetRangedValue();
+                float damping_value = damping.GetRandomRangedValue();
                 particle_data.particles[i].velocity *= std::pow(damping_value, (float)delta_time);
             }
         }

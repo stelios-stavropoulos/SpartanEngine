@@ -113,6 +113,35 @@ namespace spartan
             scale_packed    = static_cast<uint8_t>(t * 255.0f);
         }
 
+        void SetParticleInstanceData(math::Vector3& pos, math::Vector2& scale)
+        {
+            // 1. Position remains as is (Half-float)
+            position_x = float_to_half(pos.x);
+            position_y = float_to_half(pos.y);
+            position_z = float_to_half(pos.z);
+
+            // 2. Set the "Flag" to 0
+            scale_packed = 0;
+
+            // 3. Pack Scale X and Scale Y (12-bits each)
+            // We assume scale range is 0.0 to 10.0 for this example. 
+            // Adjust range as needed for your specific use case.
+            auto pack12 = [](float value) -> uint32_t {
+                float clamped = std::clamp(value / 10.0f, 0.0f, 1.0f);
+                return static_cast<uint32_t>(clamped * 4095.0f);
+                };
+
+            uint32_t packedX = pack12(scale.x);
+            uint32_t packedY = pack12(scale.y);
+
+            // Combine into 24 bits: [XXXX XXXX XXXX] [YYYY YYYY YYYY]
+            // normal_oct (16 bits) + yaw_packed (8 bits) = 24 bits total
+
+            // Put X in the first 12 bits, start of Y in the next 4, then remaining Y in yaw
+            normal_oct = static_cast<uint16_t>(packedX | ((packedY & 0xF) << 12));
+            yaw_packed = static_cast<uint8_t>((packedY >> 4) & 0xFF);
+        }
+
         static Instance GetIdentity()
         {
             Instance instance;

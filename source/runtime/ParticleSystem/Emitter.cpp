@@ -37,16 +37,13 @@ namespace spartan
         renderable->SetMesh(MeshType::Quad);
         std::shared_ptr<Material> material = std::make_shared<Material>();
         material->LoadFromFile(std::string(ResourceCache::GetProjectDirectory()) + "materials/ParticleDefault" + std::string(EXTENSION_MATERIAL));
-
         renderable->SetMaterial(material);
 
         ChangeSpawnRate(spawn_rate);
 
-        renderable->SetInstances(transforms);
+        renderable->SetInstances(instances);
 
         this->renderable = renderable;
-
-        particle_texture = new RHI_Texture(ResourceCache::GetResourceDirectory(ResourceDirectory::Textures) + "/particle.png");
     }
     Emitter::~Emitter()
     {
@@ -54,8 +51,6 @@ namespace spartan
 
         initialization_modules.clear();
         update_modules.clear();
-
-        delete(particle_texture);
     }
 
     void Emitter::ChangeSpawnRate(const float new_spawn_rate)
@@ -70,7 +65,7 @@ namespace spartan
 
         particle_data.particles.resize(particle_data.max_particle_count);
 
-        transforms.resize(particle_data.max_particle_count);
+        instances.resize(particle_data.max_particle_count);
     }
 
     void Emitter::InitializeParticles(uint32_t start_index, uint32_t end_index)
@@ -102,6 +97,7 @@ namespace spartan
                 particle_data.particles[i].position = particle_data.particles[last_alive_index].position;
                 particle_data.particles[i].velocity = particle_data.particles[last_alive_index].velocity;
                 particle_data.particles[i].color = particle_data.particles[last_alive_index].color;
+                particle_data.particles[i].scale = particle_data.particles[last_alive_index].scale;
 
                 particle_data.particles[last_alive_index].normalized_lifetime = 1.0f;
 
@@ -110,22 +106,13 @@ namespace spartan
             }
             else
             {
-                Renderer::DrawSphere(
-                    particle_data.particles[i].position,
-                    0.03f,
-                    8,
-                    particle_data.particles[i].color
-                );
-
-                transforms[i] = math::Matrix::CreateTranslation(particle_data.particles[i].position);
-
-                //Renderer::DrawIconAtPosition(particle_texture, particle_data.particles[i].position);
+                instances[i].SetParticleInstanceData(particle_data.particles[i].position, particle_data.particles[i].scale);
 
                 ++i;
             }
         }
 
-        renderable->SetInstances(transforms);
+        renderable->SetParticleInstances(instances);
 
         for (EmitterModule* module : update_modules)
         {

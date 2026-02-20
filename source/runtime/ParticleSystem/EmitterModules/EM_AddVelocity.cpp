@@ -41,7 +41,7 @@ namespace spartan
         {
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                const math::Vector3 velocity_range = velocity.GetRangedValue();
+                const math::Vector3 velocity_range = velocity.GetRandomRangedValue();
                 particle_data.particles[i].velocity = velocity_range;
             }
         }
@@ -61,7 +61,7 @@ namespace spartan
         {
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                const math::Vector3 velocity_range = velocity.GetRangedValue();
+                const math::Vector3 velocity_range = velocity.GetRandomRangedValue();
                 particle_data.particles[i].velocity += velocity_range;
             }
         }

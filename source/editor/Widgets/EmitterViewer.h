@@ -28,6 +28,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 namespace spartan
 {
     struct ParticleFloat;
+    struct ParticleVector2;
     struct ParticleVector3;
     struct ParticleColor;
     class EmitterModule;
@@ -49,11 +50,15 @@ namespace spartan
 
         static void DrawValue(const char* label, float* value);
 
+        static void DrawValue(const char* label, math::Vector2* value);
+
         static void DrawValue(const char* label, math::Vector3* value);
 
         static void DrawValue(const char* label, spartan::Color* value);
 
         static void DrawProperty(const char* name, ParticleFloat& property);
+
+        static void DrawProperty(const char* name, ParticleVector2& property);
 
         static void DrawProperty(const char* name, ParticleVector3& property);
 

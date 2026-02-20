@@ -46,9 +46,30 @@ namespace spartan
             return const_value;
         }
 
-        float GetRangedValue()
+        float GetRandomRangedValue()
         {
             return std::lerp(range_value.first, range_value.second, math::random(0.0f, 1.0f));
+        }
+    };
+
+    struct ParticleVector2
+    {
+        particle_property_type type = particle_property_type::CONSTANT;
+
+        math::Vector2 const_value{ 0.0f, 0.0f };
+        std::pair<math::Vector2, math::Vector2> range_value;
+
+        math::Vector2 GetConstValue()
+        {
+            return const_value;
+        }
+
+        math::Vector2 GetRandomRangedValue()
+        {
+            float x = std::lerp(range_value.first.x, range_value.second.x, math::random(0.0f, 1.0f));
+            float y = std::lerp(range_value.first.y, range_value.second.y, math::random(0.0f, 1.0f));
+
+            return math::Vector2(x, y);
         }
     };
 
@@ -64,7 +85,7 @@ namespace spartan
             return const_value;
         }
 
-        math::Vector3 GetRangedValue()
+        math::Vector3 GetRandomRangedValue()
         {
             float x = std::lerp(range_value.first.x, range_value.second.x, math::random(0.0f, 1.0f));
             float y = std::lerp(range_value.first.y, range_value.second.y, math::random(0.0f, 1.0f));
@@ -83,7 +104,7 @@ namespace spartan
         {
             return const_value;
         }
-        Color GetRangedValue()
+        Color GetRandomRangedValue()
         {
             float r = std::lerp(range_value.first.r, range_value.second.r, math::random(0.0f, 1.0f));
             float g = std::lerp(range_value.first.g, range_value.second.g, math::random(0.0f, 1.0f));

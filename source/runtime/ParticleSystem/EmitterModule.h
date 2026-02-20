@@ -36,6 +36,7 @@ namespace spartan
         ApplyVelocity,
         SetLifetime,
         SetColor,
+        SetScale,
         Max
     };
 

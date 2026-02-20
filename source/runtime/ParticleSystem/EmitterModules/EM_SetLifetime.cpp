@@ -42,7 +42,7 @@ namespace spartan
         {
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.particles[i].lifetime = lifetime.GetRangedValue();
+                particle_data.particles[i].lifetime = lifetime.GetRandomRangedValue();
                 particle_data.particles[i].normalized_lifetime = 0.0f;
             }
         }

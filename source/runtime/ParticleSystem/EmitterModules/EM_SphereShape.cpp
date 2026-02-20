@@ -58,7 +58,7 @@ namespace spartan
         {
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                float radius_value = radius.GetRangedValue();
+                float radius_value = radius.GetRandomRangedValue();
 
                 particle_data.particles[i].position = RandomPointInSphere(radius_value);
             }

@@ -44,7 +44,7 @@ namespace spartan
         {
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                const math::Vector3 gravity_range = gravity.GetRangedValue() * (float)delta_time;
+                const math::Vector3 gravity_range = gravity.GetRandomRangedValue() * (float)delta_time;
                 particle_data.particles[i].velocity += gravity_range;
             }
             break;

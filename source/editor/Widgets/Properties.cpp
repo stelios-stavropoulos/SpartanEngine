@@ -52,6 +52,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "../runtime/ParticleSystem/EmitterModules/EM_SetLifetime.h"
 #include "../runtime/ParticleSystem/EmitterModules/EM_SphereShape.h"
 #include "../runtime/ParticleSystem/EmitterModules/EM_SetColor.h"
+#include "../runtime/ParticleSystem/EmitterModules/EM_SetScale.h"
 //=======================================
 
 //= NAMESPACES =========
@@ -2447,6 +2448,9 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
                     case EmitterModuleType::SetColor:
                         module = new EM_SetColor();
                         break;
+                    case EmitterModuleType::SetScale:
+                        module = new EM_SetScale();
+                        break;
                     default:
                         assert(false && "Module not yet implemented!");
                         break;
@@ -2531,6 +2535,9 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
                     case EmitterModuleType::SetColor:
                         module = new EM_SetColor();
                         break;
+                    case EmitterModuleType::SetScale:
+                        module = new EM_SetScale();
+                        break;
                     default:
                         assert(false && "Module not yet implemented!");
                         break;
@@ -2587,7 +2594,9 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
     if (ImGui::Button("Add Emitter", ImVec2(-1, 0)))
     {
         Renderable* renderable = particle_system_CPU->GetEntity()->AddComponent<Renderable>();
-        particle_system_CPU->emitters.push_back(new Emitter(renderable));
+        //Emitter* emitter = new Emitter(particle_system_CPU->GetEntity()->GetComponent<Renderable>());
+        Emitter* emitter = new Emitter(renderable);
+        particle_system_CPU->emitters.push_back(emitter);
     }
 
     component_end();

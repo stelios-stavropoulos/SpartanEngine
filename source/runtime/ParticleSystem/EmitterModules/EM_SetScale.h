@@ -1,5 +1,5 @@
 /*
-Copyright(c) 2015-2026 Panos Karabelas
+Copyright(c) 2015-2025 Panos Karabelas
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,41 +22,30 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 //= INCLUDES =================================
-#include "ParticleData.h"
-#include "../Rendering/Instance.h"
+#include "../EmitterModule.h"
 //============================================
 
 namespace spartan
 {
-    class EmitterModule;
-    class RHI_Texture;
-    class Renderable;
-
-    class Emitter
+    class EM_SetScale : public EmitterModule
     {
     public:
-        bool enabled = true;
-        std::string name = "New Emitter";
-
-        float spawn_rate = 1000.0f;
-
-        std::vector<EmitterModule*> initialization_modules;
-        std::vector<EmitterModule*> update_modules;
-
-        std::vector<Instance> instances;
-        Renderable* renderable;
+        ParticleVector2 scale{
+            .type = particle_property_type::CONSTANT,
+            .const_value = {1.0f, 1.0f},
+            .range_value = std::make_pair(
+                spartan::math::Vector2{ 1.0f, 1.0f },
+                spartan::math::Vector2{ 1.25f, 1.25f }
+            )
+        };
 
     public:
-        Emitter(Renderable* renderable);
-        ~Emitter();
+        EM_SetScale() = default;
+        ~EM_SetScale() = default;
 
-        void ChangeSpawnRate(const float new_spawn_rate);
+        void OnInitialize(ParticleData& particle_data, uint32_t start_index, uint32_t end_index) override;
+        void OnUpdate(ParticleData& particle_data, const double& delta_time) override;
 
-        void InitializeParticles(uint32_t start_index, uint32_t end_index);
-        void Update(const double& delta_time);
-
-    private:
-        ParticleData particle_data;
-        float spawn_accumulator = 0.0f;
+        const EmitterModuleType GetType() const override { return EmitterModuleType::SetScale; }
     };
 }

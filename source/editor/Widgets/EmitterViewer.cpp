@@ -34,16 +34,17 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "../runtime/ParticleSystem/EmitterModules/EM_SetLifetime.h"
 #include "../runtime/ParticleSystem/EmitterModules/EM_SphereShape.h"
 #include "../runtime/ParticleSystem/EmitterModules/EM_SetColor.h"
+#include "../runtime/ParticleSystem/EmitterModules/EM_SetScale.h"
 //===========================================
 
 namespace spartan
 {
     std::vector<std::string> EmitterViewer::GetAvailableInitializationModules() {
-        return { "Set Lifetime", "Sphere Shape", "Add Velocity", "Set Color" };
+        return { "Set Lifetime", "Sphere Shape", "Add Velocity", "Set Color", "Set Scale" };
     }
 
     std::vector<std::string> EmitterViewer::GetAvailableUpdateModules() {
-        return { "Add Velocity", "Gravity", "Apply Velocity", "Set Color" };
+        return { "Add Velocity", "Gravity", "Apply Velocity", "Set Color", "Set Scale" };
     }
 
     std::string EmitterViewer::TypeToString(EmitterModuleType type) {
@@ -53,6 +54,7 @@ namespace spartan
         if (type == EmitterModuleType::ApplyVelocity)   return "Apply Velocity";
         if (type == EmitterModuleType::SetLifetime)     return "Set Lifetime";
         if (type == EmitterModuleType::SetColor)        return "Set Color";
+        if (type == EmitterModuleType::SetScale)        return "Set Scale";
 
         assert(false && "TypeToString: Unknown EmitterModuleType");
         return {};        
@@ -65,6 +67,7 @@ namespace spartan
             if (name == "Apply Velocity")   return EmitterModuleType::ApplyVelocity;
             if (name == "Set Lifetime")     return EmitterModuleType::SetLifetime;
             if (name == "Set Color")        return EmitterModuleType::SetColor;
+            if (name == "Set Scale")        return EmitterModuleType::SetScale;
     
             assert(false && "StringToType: Unknown module name");
             return EmitterModuleType::Max;        
@@ -89,6 +92,14 @@ namespace spartan
     
         void EmitterViewer::DrawValue(const char* label, float* value) {
             ImGui::DragFloat(label, value, 0.1f);
+        }
+
+        void EmitterViewer::DrawValue(const char* label, math::Vector2* value) {
+            float arr[2] = { value->x, value->y };
+            if (ImGui::DragFloat2(label, arr, 0.1f)) {
+                value->x = arr[0];
+                value->y = arr[1];
+            }
         }
     
         void EmitterViewer::DrawValue(const char* label, math::Vector3* value) {
@@ -149,6 +160,52 @@ namespace spartan
                     ImGui::SetNextItemWidth(dropdown_width);
                     DrawValue("Max", &property.range_value.second);
                 }
+            }
+            ImGui::EndGroup();
+
+            ImGui::Spacing();
+            ImGui::PopID();
+        }
+
+        void EmitterViewer::DrawProperty(const char* name, ParticleVector2& property)
+        {
+            ImGui::PushID(name);
+
+            float dropdown_width = 120.0f;
+            float dropdown_pos_x = ImGui::GetContentRegionAvail().x - dropdown_width;
+
+            // Display the property label (e.g., "Velocity" or "Scale")
+            ImGui::Text(name);
+            ImGui::SameLine(dropdown_pos_x);
+            ImGui::SetNextItemWidth(dropdown_width);
+
+            // Dropdown to select the generation type
+            int type = static_cast<int>(property.type);
+            if (ImGui::Combo("##type", &type, "Constant\0Range\0Curve\0"))
+            {
+                property.type = static_cast<particle_property_type>(type);
+            }
+
+            // Align the input fields under the dropdown
+            ImGui::SetCursorPosX(dropdown_pos_x);
+            ImGui::BeginGroup();
+            {
+                if (property.type == particle_property_type::CONSTANT)
+                {
+                    ImGui::SetNextItemWidth(dropdown_width);
+                    // Assuming DrawValue is overloaded for Vector2
+                    DrawValue("Const", &property.const_value);
+                }
+                else if (property.type == particle_property_type::RANGE)
+                {
+                    ImGui::SetNextItemWidth(dropdown_width);
+                    DrawValue("Min", &property.range_value.first);
+
+                    ImGui::SetCursorPosX(dropdown_pos_x);
+                    ImGui::SetNextItemWidth(dropdown_width);
+                    DrawValue("Max", &property.range_value.second);
+                }
+                // You can add Curve logic here if/when implemented
             }
             ImGui::EndGroup();
 
@@ -284,6 +341,12 @@ namespace spartan
             {
                 EM_SphereShape* shpere_shape = static_cast<EM_SphereShape*>(module);
                 DrawProperty("Sphere Radius", shpere_shape->radius);
+            }
+            break;
+            case EmitterModuleType::SetScale:
+            {
+                EM_SetScale* scale = static_cast<EM_SetScale*>(module);
+                DrawProperty("Scale", scale->scale);
             }
             break;
             default:
