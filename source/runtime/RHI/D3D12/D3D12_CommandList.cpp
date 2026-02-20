@@ -167,7 +167,8 @@ namespace spartan
         m_buffer_id_index  = 0;
     }
 
-    void RHI_CommandList::Submit(RHI_SyncPrimitive* semaphore_wait, const bool is_immediate, RHI_SyncPrimitive* semaphore_signal /*= nullptr*/)
+    void RHI_CommandList::Submit(RHI_SyncPrimitive* semaphore_wait, const bool is_immediate, RHI_SyncPrimitive* semaphore_signal /*= nullptr*/,
+                                RHI_SyncPrimitive* semaphore_timeline_wait /*= nullptr*/, uint64_t timeline_wait_value /*= 0*/)
     {
         SP_ASSERT(m_rhi_resource != nullptr);
         SP_ASSERT(m_state == RHI_CommandListState::Recording);
@@ -571,6 +572,17 @@ namespace spartan
         return 0.0f;
     }
 
+    float RHI_CommandList::GetTimestampStartMs(const uint32_t timestamp_index)
+    {
+        // todo: implement timestamps
+        return 0.0f;
+    }
+
+    void RHI_CommandList::ReadbackTimestampsForProfiler()
+    {
+        // todo: implement timestamps
+    }
+
     void RHI_CommandList::BeginOcclusionQuery(const uint64_t entity_id)
     {
         // todo: implement occlusion queries
@@ -701,11 +713,27 @@ namespace spartan
         // todo: implement texture to buffer copy
     }
 
+    namespace immediate_execution
+    {
+        static mutex mutex_execution;
+        static condition_variable condition_var;
+        static bool is_executing = false;
+    }
+
     RHI_CommandList* RHI_CommandList::ImmediateExecutionBegin(const RHI_Queue_Type queue_type)
     {
+        // serialize immediate submissions so parallel texture loading doesn't race on the queue
+        unique_lock<mutex> lock(immediate_execution::mutex_execution);
+        immediate_execution::condition_var.wait(lock, [] { return !immediate_execution::is_executing; });
+        immediate_execution::is_executing = true;
+
         RHI_Queue* queue = RHI_Device::GetQueue(queue_type);
         if (!queue)
+        {
+            immediate_execution::is_executing = false;
+            immediate_execution::condition_var.notify_one();
             return nullptr;
+        }
 
         RHI_CommandList* cmd_list = queue->NextCommandList();
         cmd_list->Begin();
@@ -718,6 +746,9 @@ namespace spartan
         {
             cmd_list->Submit(nullptr, true);
         }
+
+        immediate_execution::is_executing = false;
+        immediate_execution::condition_var.notify_one();
     }
 
     void RHI_CommandList::ImmediateExecutionShutdown()

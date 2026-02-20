@@ -277,52 +277,35 @@ namespace spartan
             "VK_KHR_ray_tracing_maintenance1"
         };
 
-        bool is_present_device(const char* extension_name, VkPhysicalDevice device_physical)
-        {
-            uint32_t extension_count = 0;
-            vkEnumerateDeviceExtensionProperties(device_physical, nullptr, &extension_count, nullptr);
-
-            vector<VkExtensionProperties> extensions(extension_count);
-            vkEnumerateDeviceExtensionProperties(device_physical, nullptr, &extension_count, extensions.data());
-
-            for (const auto& extension : extensions)
-            {
-                if (strcmp(extension_name, extension.extensionName) == 0)
-                    return true;
-            }
-
-            return false;
-        }
-
-        bool is_present_instance(const char* extension_name)
-        {
-            uint32_t extension_count = 0;
-            vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
-
-            vector<VkExtensionProperties> extensions(extension_count);
-            vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extensions.data());
-
-            for (const auto& extension : extensions)
-            {
-                if (strcmp(extension_name, extension.extensionName) == 0)
-                    return true;
-            }
-
-            return false;
-        }
-
         vector<const char*> get_extensions_device()
         {
+            // enumerate all available device extensions once
+            uint32_t available_count = 0;
+            vkEnumerateDeviceExtensionProperties(RHI_Context::device_physical, nullptr, &available_count, nullptr);
+            vector<VkExtensionProperties> available(available_count);
+            vkEnumerateDeviceExtensionProperties(RHI_Context::device_physical, nullptr, &available_count, available.data());
+
+            // check each requested extension against the enumerated list
             vector<const char*> extensions_supported;
-            for (const auto& extension : extensions_device)
+            for (const auto& requested : extensions_device)
             {
-                if (is_present_device(extension, RHI_Context::device_physical))
+                bool found = false;
+                for (const auto& ext : available)
                 {
-                    extensions_supported.emplace_back(extension);
+                    if (strcmp(requested, ext.extensionName) == 0)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found)
+                {
+                    extensions_supported.emplace_back(requested);
                 }
                 else
                 {
-                    SP_LOG_WARNING("Device extension \"%s\" is not supported", extension);
+                    SP_LOG_WARNING("Device extension \"%s\" is not supported", requested);
                 }
             }
 
@@ -331,28 +314,61 @@ namespace spartan
 
         vector<const char*> get_extensions_instance()
         {
-            // validation layer messaging/logging
             if (Debugging::IsValidationLayerEnabled())
             {
                 extensions_instance.emplace_back("VK_EXT_debug_report");
+                extensions_instance.emplace_back("VK_EXT_debug_utils");
+                extensions_instance.emplace_back("VK_EXT_layer_settings");
+                extensions_instance.emplace_back("VK_EXT_validation_features");
             }
 
-            // object naming (for the validation messages) and gpu markers
-            if (Debugging::IsGpuMarkingEnabled())
+            // gpu markers (also uses debug utils, but it's already added above if validation is on)
+            if (Debugging::IsGpuMarkingEnabled() && !Debugging::IsValidationLayerEnabled())
             {
                 extensions_instance.emplace_back("VK_EXT_debug_utils");
             }
 
-            vector<const char*> extensions_supported;
-            for (const auto& extension : extensions_instance)
+            // enumerate all available instance extensions (loader + ICD)
+            uint32_t available_count = 0;
+            vkEnumerateInstanceExtensionProperties(nullptr, &available_count, nullptr);
+            vector<VkExtensionProperties> available(available_count);
+            vkEnumerateInstanceExtensionProperties(nullptr, &available_count, available.data());
+
+            // layer-provided extensions (e.g. VK_EXT_layer_settings, VK_EXT_validation_features) are only
+            // returned when enumerating with the layer name, not from the loader-level enumeration above
+            if (Debugging::IsValidationLayerEnabled())
             {
-                if (is_present_instance(extension))
+                uint32_t layer_ext_count = 0;
+                vkEnumerateInstanceExtensionProperties("VK_LAYER_KHRONOS_validation", &layer_ext_count, nullptr);
+                if (layer_ext_count > 0)
                 {
-                    extensions_supported.emplace_back(extension);
+                    vector<VkExtensionProperties> layer_exts(layer_ext_count);
+                    vkEnumerateInstanceExtensionProperties("VK_LAYER_KHRONOS_validation", &layer_ext_count, layer_exts.data());
+                    available.insert(available.end(), layer_exts.begin(), layer_exts.end());
+                }
+            }
+
+            // check each requested extension against the enumerated list
+            vector<const char*> extensions_supported;
+            for (const auto& requested : extensions_instance)
+            {
+                bool found = false;
+                for (const auto& ext : available)
+                {
+                    if (strcmp(requested, ext.extensionName) == 0)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found)
+                {
+                    extensions_supported.emplace_back(requested);
                 }
                 else
                 {
-                    SP_LOG_ERROR("Instance extension \"%s\" is not supported", extension);
+                    SP_LOG_WARNING("Instance extension \"%s\" is not supported", requested);
                 }
             }
 
@@ -364,22 +380,12 @@ namespace spartan
     {
         // layers configuration: https://vulkan.lunarg.com/doc/view/1.3.296.0/windows/layer_configuration.html
 
-        static const char* layer_name                        = "VK_LAYER_KHRONOS_validation";
-        static const VkBool32 setting_validate_core          = VK_TRUE;
-        static const VkBool32 setting_validate_sync          = VK_TRUE;
-        static const VkBool32 setting_thread_safety          = VK_TRUE;
-        static const VkBool32 setting_enable_message_limit   = VK_TRUE;
-        static const int32_t setting_duplicate_message_limit = 10;
-        static const char* setting_debug_action[]            = { "VK_DBG_LAYER_ACTION_LOG_MSG" };
-        static const char* setting_report_flags[]            = { "info", "warn", "perf", "error", "debug" };
-        static const char* setting_features[]                =
-        {
-            "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",
-            "VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT",
-            //"VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_AMD",
-            //"VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA"
-        };
-        static const uint32_t setting_features_count = SP_ARRAY_SIZE(setting_features);
+        static const char* layer_name                           = "VK_LAYER_KHRONOS_validation";
+        static const VkBool32 setting_bool_true                 = VK_TRUE;
+        static const VkBool32 setting_enable_message_limit      = VK_TRUE;
+        static const uint32_t setting_duplicate_message_limit   = 10;
+        static const char* setting_debug_action[]               = { "VK_DBG_LAYER_ACTION_LOG_MSG" };
+        static const char* setting_report_flags[]               = { "info", "warn", "perf", "error", "debug" };
         
         static vector<VkLayerSettingEXT> settings_storage; // persistent storage for VkLayerSettingEXT
         vector<VkLayerSettingEXT>& get_settings()
@@ -407,34 +413,25 @@ namespace spartan
                 SP_ASSERT_MSG(!validation_layer_unavailable, "Please install the Vulkan SDK, ensure correct environment variables and restart your machine: https://vulkan.lunarg.com/sdk/home");
             }
 
-            // fill static settings
             settings_storage =
             {
-                { layer_name, "validate_core",           VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_validate_core },
-                { layer_name, "validate_sync",           VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_validate_sync },
-                { layer_name, "thread_safety",           VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_thread_safety },
-                { layer_name, "debug_action",            VK_LAYER_SETTING_TYPE_STRING_EXT, 1, setting_debug_action },
-                { layer_name, "report_flags",            VK_LAYER_SETTING_TYPE_STRING_EXT, 5, setting_report_flags },
-                { layer_name, "enable_message_limit",    VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_enable_message_limit },
-                { layer_name, "duplicate_message_limit", VK_LAYER_SETTING_TYPE_INT32_EXT,  1, &setting_duplicate_message_limit },
-                { layer_name, "enables",                 VK_LAYER_SETTING_TYPE_STRING_EXT, setting_features_count, setting_features }
+                { layer_name, "validate_core",                  VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "validate_sync",                  VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "validate_best_practices",        VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "validate_best_practices_amd",    VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "validate_best_practices_arm",    VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "validate_best_practices_img",    VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "validate_best_practices_nvidia", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "thread_safety",                  VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true },
+                { layer_name, "debug_action",                   VK_LAYER_SETTING_TYPE_STRING_EXT, 1, setting_debug_action },
+                { layer_name, "report_flags",                   VK_LAYER_SETTING_TYPE_STRING_EXT, 5, setting_report_flags },
+                { layer_name, "enable_message_limit",           VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_enable_message_limit },
+                { layer_name, "duplicate_message_limit",        VK_LAYER_SETTING_TYPE_UINT32_EXT, 1, &setting_duplicate_message_limit },
             };
-        
-            // optionally append GPU-assisted validation
+
             if (Debugging::IsGpuAssistedValidationEnabled())
             {
-                static const char* setting_enable_gpu_assisted = "VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT";
-        
-                // append to the enables array safely
-                static const char* combined_enables[5];
-                for (int i = 0; i < setting_features_count; ++i)
-                {
-                    combined_enables[i] = setting_features[i];
-                }
-                combined_enables[setting_features_count] = setting_enable_gpu_assisted;
-        
-                // replace the last entry in settings_storage
-                settings_storage.back() = { layer_name, "enables", VK_LAYER_SETTING_TYPE_STRING_EXT, setting_features_count + 1, combined_enables };
+                settings_storage.push_back({ layer_name, "gpuav_enable", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_bool_true });
             }
         
             return settings_storage;
@@ -444,6 +441,39 @@ namespace spartan
         {
             VkDebugUtilsMessengerEXT messenger;
 
+            // suppress known non-actionable warnings from third-party libraries and validation sdk.
+            // these are either caused by external code (fidelityfx, xess, openxr) requesting
+            // deprecated-but-functional extensions, or by sdk best-practice heuristics that
+            // don't apply to this engine's architecture (e.g. sub-allocation, gpu-av overhead).
+            bool is_suppressed(const VkDebugUtilsMessengerCallbackDataEXT* data)
+            {
+                if (!data || !data->pMessage)
+                    return false;
+
+                const char* msg = data->pMessage;
+
+                // deprecated extensions required by fidelityfx / openxr / xess
+                if (strstr(msg, "Attempting to enable deprecated extension"))  return true;
+                if (strstr(msg, "intended to support D3D emulation layers"))   return true;
+
+                // sub-allocation best-practice: would require a pool allocator for tiny resources
+                if (strstr(msg, "fully consumed by the"))                      return true;
+
+                // spir-v workgroup built-in deprecated in 1.6, requires newer dxc to emit LocalSizeId
+                if (strstr(msg, "Workgroup built-in"))                         return true;
+
+                // gpu-av instrumentation overhead warning (validation layer only, not a runtime issue)
+                if (strstr(msg, "very slow to compile"))                       return true;
+
+                // mutable descriptor type list count mismatch from xess descriptor pool creation
+                if (strstr(msg, "mutableDescriptorTypeListCount"))             return true;
+
+                // forced feature enablement by the validation layer itself
+                if (strstr(msg, "Internal Warning: Forcing"))                  return true;
+
+                return false;
+            }
+
             VKAPI_ATTR VkBool32 VKAPI_CALL log
             (
                 VkDebugUtilsMessageSeverityFlagBitsEXT msg_severity,
@@ -452,19 +482,20 @@ namespace spartan
                 void* p_user_data
             )
             {
-                string msg = "Vulkan: " + string(p_callback_data->pMessage);
+                if (is_suppressed(p_callback_data))
+                    return VK_FALSE;
 
                 if (/*(msg_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) ||*/ (msg_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT))
                 {
-                    SP_LOG_INFO(msg.c_str());
+                    SP_LOG_INFO("Vulkan: %s", p_callback_data->pMessage);
                 }
                 else if (msg_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
                 {
-                    SP_LOG_WARNING(msg.c_str());
+                    SP_LOG_WARNING("Vulkan: %s", p_callback_data->pMessage);
                 }
                 else if (msg_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
                 {
-                    SP_LOG_ERROR(msg.c_str());
+                    SP_LOG_ERROR("Vulkan: %s", p_callback_data->pMessage);
                 }
 
                 return VK_FALSE;
@@ -480,7 +511,7 @@ namespace spartan
                     create_info.messageType                        = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
                     create_info.pfnUserCallback                    = log;
 
-                    functions::create_messenger(RHI_Context::instance, &create_info, nullptr, &messenger);
+                    SP_ASSERT_VK(functions::create_messenger(RHI_Context::instance, &create_info, nullptr, &messenger));
                 }
             }
 
@@ -509,51 +540,6 @@ namespace spartan
         void destroy()
         {
             regular.fill(nullptr);
-        }
-
-        uint32_t get_queue_family_index(const vector<VkQueueFamilyProperties>& queue_families, VkQueueFlags queue_flags)
-        {
-            // compute only queue family index
-            if ((queue_flags & VK_QUEUE_COMPUTE_BIT) == queue_flags)
-            {
-                for (uint32_t i = 0; i < static_cast<uint32_t>(queue_families.size()); i++)
-                {
-                    if (i == index_graphics)
-                        continue;
-
-                    if ((queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) && ((queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0))
-                    {
-                        return i;
-                    }
-                }
-            }
-
-            // transfer only queue family index
-            if ((queue_flags & VK_QUEUE_TRANSFER_BIT) == queue_flags)
-            {
-                for (uint32_t i = 0; i < static_cast<uint32_t>(queue_families.size()); i++)
-                {
-                    if (i == index_graphics || i == index_compute)
-                        continue;
-
-                    if ((queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT) && ((queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0) && ((queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) == 0))
-                    {
-                        return i;
-                    }
-                }
-            }
-
-            // first available graphics queue family index
-            for (uint32_t i = 0; i < static_cast<uint32_t>(queue_families.size()); i++)
-            {
-                if ((queue_families[i].queueFlags & queue_flags) == queue_flags)
-                {
-                    return i;
-                }
-            }
-
-            SP_ASSERT_MSG(false, "Could not find a matching queue family index");
-            return numeric_limits<uint32_t>::max();
         }
 
         bool detect_queue_family_indices(VkPhysicalDevice physical_device)
@@ -634,91 +620,6 @@ namespace spartan
             return true;
         }
 
-        bool get_queue_family_index(VkQueueFlagBits queue_flags, const vector<VkQueueFamilyProperties>& queue_family_properties, uint32_t* index)
-        {
-            // try to find a queue that only supports compute (dedicated)
-            if (queue_flags & VK_QUEUE_COMPUTE_BIT)
-            {
-                for (uint32_t i = 0; i < static_cast<uint32_t>(queue_family_properties.size()); i++)
-                {
-                    if ((queue_family_properties[i].queueFlags & queue_flags) && ((queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0))
-                    {
-                        *index = i;
-                        return true;
-                    }
-                }
-            }
-
-            // try to find a queue that only supports copy (dedicated)
-            if (queue_flags & VK_QUEUE_TRANSFER_BIT)
-            {
-                for (uint32_t i = 0; i < static_cast<uint32_t>(queue_family_properties.size()); i++)
-                {
-                    if ((queue_family_properties[i].queueFlags & queue_flags) && ((queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0) && ((queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) == 0))
-                    {
-                        *index = i;
-                        return true;
-                    }
-                }
-            }
-
-            // for graphics, just find any queue that supports graphics
-            for (uint32_t i = 0; i < static_cast<uint32_t>(queue_family_properties.size()); i++)
-            {
-                if (queue_family_properties[i].queueFlags & queue_flags)
-                {
-                    *index = i;
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        bool get_queue_family_indices(const VkPhysicalDevice& physical_device)
-        {
-            uint32_t queue_family_count = 0;
-            vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
-        
-            vector<VkQueueFamilyProperties> queue_families_properties(queue_family_count);
-            vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families_properties.data());
-        
-            // graphics
-            uint32_t index = 0;
-            if (get_queue_family_index(VK_QUEUE_GRAPHICS_BIT, queue_families_properties, &index))
-            {
-                queues::index_graphics = index;
-            }
-            else
-            {
-                SP_LOG_ERROR("Graphics queue not supported.");
-                return false;
-            }
-        
-            // compute
-            if (get_queue_family_index(VK_QUEUE_COMPUTE_BIT, queue_families_properties, &index))
-            {
-                queues::index_compute = index;
-            }
-            else
-            {
-                SP_LOG_ERROR("Compute queue not supported.");
-                return false;
-            }
-        
-            // copy
-            if (get_queue_family_index(VK_QUEUE_TRANSFER_BIT, queue_families_properties, &index))
-            {
-                queues::index_copy = index;
-            }
-            else
-            {
-                SP_LOG_ERROR("Copy queue not supported.");
-                return false;
-            }
-        
-            return true;
-        };
     }
 
     namespace vulkan_memory_allocator
@@ -924,17 +825,11 @@ namespace spartan
                     }
                 }
         
-                // simple bubble sort
-                for (size_t i = 0; i < static_size; ++i)
+                // sort by slot
+                sort(static_buffer, static_buffer + static_size, [](const RHI_Descriptor& a, const RHI_Descriptor& b)
                 {
-                    for (size_t j = i + 1; j < static_size; ++j)
-                    {
-                        if (static_buffer[j].slot < static_buffer[i].slot)
-                        {
-                            swap(static_buffer[i], static_buffer[j]);
-                        }
-                    }
-                }
+                    return a.slot < b.slot;
+                });
         
                 // cache as vector (first-time allocation unavoidable)
                 descriptor_cache[pipeline_state_hash] = vector<RHI_Descriptor>(static_buffer, static_buffer + static_size);
@@ -1086,7 +981,9 @@ namespace spartan
                 const uint32_t index      = static_cast<uint32_t>(RHI_Device_Bindless_Resource::MaterialTextures);
                 const ResourceConfig& cfg = configs[index];
 
-                vector<VkDescriptorImageInfo> image_infos(cfg.count);
+                static thread_local vector<VkDescriptorImageInfo> image_infos;
+                image_infos.resize(cfg.count);
+
                 void* fallback = Renderer::GetStandardTexture(Renderer_StandardTexture::Checkerboard)->GetRhiSrv();
 
                 for (uint32_t i = 0; i < cfg.count; ++i)
@@ -1111,10 +1008,12 @@ namespace spartan
 
             void update_samplers(RHI_Device_Bindless_Resource type, const shared_ptr<RHI_Sampler>* samplers, uint32_t count)
             {
-                const uint32_t index      = static_cast<uint32_t>(type);
-                const ResourceConfig& cfg = configs[index];
+                const uint32_t index = static_cast<uint32_t>(type);
 
-                vector<VkDescriptorImageInfo> image_infos(count);
+                // max sampler count is small enough for the stack
+                constexpr uint32_t max_samplers = 16;
+                SP_ASSERT(count <= max_samplers);
+                VkDescriptorImageInfo image_infos[max_samplers] = {};
                 for (uint32_t i = 0; i < count; ++i)
                 {
                     image_infos[i].sampler = static_cast<VkSampler>(samplers[i]->GetRhiResource());
@@ -1127,7 +1026,7 @@ namespace spartan
                 write.dstArrayElement = 0;
                 write.descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLER;
                 write.descriptorCount = count;
-                write.pImageInfo      = image_infos.data();
+                write.pImageInfo      = image_infos;
 
                 vkUpdateDescriptorSets(RHI_Context::device, 1, &write, 0, nullptr);
             }
@@ -1518,7 +1417,7 @@ namespace spartan
                 VkPhysicalDevice device = static_cast<VkPhysicalDevice>(RHI_Device::PhysicalDeviceGet()[device_index].GetData());
 
                 // get the first device which supports graphics, compute and transfer queues
-                if (queues::get_queue_family_indices(device))
+                if (queues::detect_queue_family_indices(device))
                 {
                     RHI_Device::PhysicalDeviceSetPrimary(device_index);
                     RHI_Context::device_physical = device;
@@ -1532,6 +1431,24 @@ namespace spartan
     {
         // instance
         {
+            // if VK_LAYER_PATH points to a non-existent directory (stale sdk install), clear it
+            // so the loader falls back to the windows registry which has the correct layer paths
+            {
+                char* layer_path = nullptr;
+                size_t len       = 0;
+                _dupenv_s(&layer_path, &len, "VK_LAYER_PATH");
+                if (layer_path)
+                {
+                    struct stat info;
+                    if (stat(layer_path, &info) != 0 || !(info.st_mode & S_IFDIR))
+                    {
+                        SP_LOG_WARNING("VK_LAYER_PATH points to \"%s\" which doesn't exist, clearing it", layer_path);
+                        _putenv_s("VK_LAYER_PATH", "");
+                    }
+                    free(layer_path);
+                }
+            }
+
             VkInstanceCreateInfo info_instance      = {};
             info_instance.sType                     = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
             VkApplicationInfo app_info              = create_application_info();
@@ -1541,20 +1458,77 @@ namespace spartan
             vector<const char*> extensions_instance = extensions::get_extensions_instance();
             info_instance.enabledExtensionCount     = static_cast<uint32_t>(extensions_instance.size());
             info_instance.ppEnabledExtensionNames   = extensions_instance.data();
-            info_instance.enabledLayerCount         = Debugging::IsValidationLayerEnabled() ? 1 : 0;
-            info_instance.ppEnabledLayerNames       = Debugging::IsValidationLayerEnabled() ? &validation_layer::layer_name : nullptr;
-
-            // settings
-            VkLayerSettingsCreateInfoEXT info_settings = {};
-            info_settings.sType                        = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT;
-            info_instance.pNext                        = &info_settings;
-            vector<VkLayerSettingEXT> settings;
+            // check if the validation layer is actually installed before trying to enable it,
+            // some loaders silently accept a missing layer instead of returning VK_ERROR_LAYER_NOT_PRESENT
+            bool validation_layer_available = false;
             if (Debugging::IsValidationLayerEnabled())
-            { 
-                settings = validation_layer::get_settings();
+            {
+                uint32_t layer_count = 0;
+                vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
+                vector<VkLayerProperties> layers(layer_count);
+                vkEnumerateInstanceLayerProperties(&layer_count, layers.data());
+
+                for (const VkLayerProperties& layer : layers)
+                {
+                    if (strcmp(validation_layer::layer_name, layer.layerName) == 0)
+                    {
+                        validation_layer_available = true;
+                        break;
+                    }
+                }
+
+                if (!validation_layer_available)
+                {
+                    SP_LOG_ERROR("Validation layer requested but VK_LAYER_KHRONOS_validation is not installed. "
+                                 "Install the Vulkan SDK from https://vulkan.lunarg.com/sdk/home and restart.");
+                }
             }
-            info_settings.pSettings    = settings.data();
-            info_settings.settingCount = static_cast<uint32_t>(settings.size());
+
+            info_instance.enabledLayerCount       = validation_layer_available ? 1 : 0;
+            info_instance.ppEnabledLayerNames     = validation_layer_available ? &validation_layer::layer_name : nullptr;
+
+            // configure validation layer settings
+            bool layer_settings_supported      = false;
+            bool validation_features_supported  = false;
+            for (const auto& ext : extensions_instance)
+            {
+                if (strcmp(ext, "VK_EXT_layer_settings") == 0)
+                    layer_settings_supported = true;
+                if (strcmp(ext, "VK_EXT_validation_features") == 0)
+                    validation_features_supported = true;
+            }
+
+            VkLayerSettingsCreateInfoEXT info_settings         = {};
+            vector<VkLayerSettingEXT> settings;
+            VkValidationFeaturesEXT info_validation_features   = {};
+            vector<VkValidationFeatureEnableEXT> enabled_features;
+            if (validation_layer_available)
+            {
+                if (layer_settings_supported)
+                {
+                    // preferred: fine-grained layer configuration via VK_EXT_layer_settings
+                    info_settings.sType        = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT;
+                    settings                   = validation_layer::get_settings();
+                    info_settings.pSettings    = settings.data();
+                    info_settings.settingCount = static_cast<uint32_t>(settings.size());
+                    info_instance.pNext        = &info_settings;
+                }
+                else if (validation_features_supported)
+                {
+                    // fallback: VkValidationFeaturesEXT for loaders that don't expose VK_EXT_layer_settings
+                    enabled_features.push_back(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+                    enabled_features.push_back(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+                    if (Debugging::IsGpuAssistedValidationEnabled())
+                    {
+                        enabled_features.push_back(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT);
+                    }
+
+                    info_validation_features.sType                         = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+                    info_validation_features.enabledValidationFeatureCount  = static_cast<uint32_t>(enabled_features.size());
+                    info_validation_features.pEnabledValidationFeatures     = enabled_features.data();
+                    info_instance.pNext                                    = &info_validation_features;
+                }
+            }
 
             // create the vulkan instance
             SP_ASSERT_VK(vkCreateInstance(&info_instance, nullptr, &RHI_Context::instance));
@@ -1769,9 +1743,12 @@ namespace spartan
 
     void RHI_Device::QueueWaitAll(const bool flush)
     {
-        for (uint32_t i = 0; i < 2; i++)
+        for (uint32_t i = 0; i < static_cast<uint32_t>(RHI_Queue_Type::Max); i++)
         {
-            queues::regular[i]->Wait(flush);
+            if (queues::regular[i])
+            {
+                queues::regular[i]->Wait(flush);
+            }
         }
     }
 
@@ -2052,15 +2029,20 @@ namespace spartan
         // allocate
         VmaAllocation allocation = nullptr;
         VmaAllocationInfo allocation_info;
-        SP_ASSERT_VK(vmaCreateBuffer(
+        VkResult result = vmaCreateBuffer(
             vulkan_memory_allocator::allocator,
                 &buffer_create_info,
                 &allocation_create_info,
                 reinterpret_cast<VkBuffer*>(&resource),
                 &allocation,
-                &allocation_info)
-        );
-        SP_ASSERT(allocation != nullptr);
+                &allocation_info);
+
+        if (result != VK_SUCCESS)
+        {
+            SP_LOG_WARNING("vmaCreateBuffer failed for '%s' (%llu bytes): %s", name, size, vkresult_to_string(result));
+            resource = nullptr;
+            return;
+        }
 
         // if a pointer to the buffer data has been passed, map the buffer and copy over the data
         if (data)
@@ -2122,6 +2104,15 @@ namespace spartan
         create_info_image.initialLayout     = vulkan_image_layout[static_cast<uint8_t>(texture->GetLayout(0))];
         create_info_image.samples           = VK_SAMPLE_COUNT_1_BIT;
         create_info_image.sharingMode       = VK_SHARING_MODE_EXCLUSIVE;
+
+        // enable concurrent sharing between graphics and compute queue families for async compute
+        uint32_t concurrent_families[2] = { queues::index_graphics, queues::index_compute };
+        if ((texture->GetFlags() & RHI_Texture_ConcurrentSharing) && queues::index_graphics != queues::index_compute)
+        {
+            create_info_image.sharingMode           = VK_SHARING_MODE_CONCURRENT;
+            create_info_image.queueFamilyIndexCount = 2;
+            create_info_image.pQueueFamilyIndices   = concurrent_families;
+        }
 
         // check physical device format support
         {
@@ -2224,16 +2215,31 @@ namespace spartan
         }
     }
 
+    namespace
+    {
+        // cached at init time since physical device memory properties never change
+        VkPhysicalDeviceMemoryProperties cached_memory_properties = {};
+        bool memory_properties_cached = false;
+
+        const VkPhysicalDeviceMemoryProperties& get_memory_properties()
+        {
+            if (!memory_properties_cached)
+            {
+                vkGetPhysicalDeviceMemoryProperties(static_cast<VkPhysicalDevice>(RHI_Context::device_physical), &cached_memory_properties);
+                memory_properties_cached = true;
+            }
+            return cached_memory_properties;
+        }
+    }
+
     uint64_t RHI_Device::MemoryGetAllocatedMb()
     {
         uint64_t bytes = 0;
-    
-        VkPhysicalDeviceMemoryProperties memory_properties;
-        vkGetPhysicalDeviceMemoryProperties(static_cast<VkPhysicalDevice>(RHI_Context::device_physical), &memory_properties);
-    
+        const VkPhysicalDeviceMemoryProperties& memory_properties = get_memory_properties();
+
         VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
         vmaGetHeapBudgets(vulkan_memory_allocator::allocator, budgets);
-    
+
         for (uint32_t i = 0; i < VK_MAX_MEMORY_HEAPS; i++)
         {
             if (memory_properties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
@@ -2242,20 +2248,18 @@ namespace spartan
                     bytes += budgets[i].usage;
             }
         }
-    
+
         return bytes / (1024ull * 1024ull);
     }
-    
+
     uint64_t RHI_Device::MemoryGetAvailableMb()
     {
         uint64_t bytes = 0;
-    
-        VkPhysicalDeviceMemoryProperties memory_properties;
-        vkGetPhysicalDeviceMemoryProperties(static_cast<VkPhysicalDevice>(RHI_Context::device_physical), &memory_properties);
-    
+        const VkPhysicalDeviceMemoryProperties& memory_properties = get_memory_properties();
+
         VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
         vmaGetHeapBudgets(vulkan_memory_allocator::allocator, budgets);
-    
+
         for (uint32_t i = 0; i < VK_MAX_MEMORY_HEAPS; i++)
         {
             if (memory_properties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
@@ -2264,26 +2268,23 @@ namespace spartan
                     bytes += budgets[i].budget;
             }
         }
-    
+
         return bytes / (1024ull * 1024ull);
     }
 
     uint64_t RHI_Device::MemoryGetTotalMb()
     {
         uint64_t bytes = 0;
-    
-        VkPhysicalDeviceMemoryProperties memory_properties;
-        vkGetPhysicalDeviceMemoryProperties(static_cast<VkPhysicalDevice>(RHI_Context::device_physical), &memory_properties);
-    
+        const VkPhysicalDeviceMemoryProperties& memory_properties = get_memory_properties();
+
         for (uint32_t i = 0; i < memory_properties.memoryHeapCount; i++)
         {
-            // Only consider device-local heaps (VRAM on dGPUs)
             if (memory_properties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
             {
                 bytes += memory_properties.memoryHeaps[i].size;
             }
         }
-    
+
         return bytes / (1024ull * 1024ull);
     }
 
