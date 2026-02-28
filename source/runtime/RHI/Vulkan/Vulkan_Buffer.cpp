@@ -42,6 +42,15 @@ namespace spartan
         }
     }
 
+    void RHI_Buffer::DestroyResourceImmediate()
+    {
+        if (m_rhi_resource)
+        {
+            RHI_Device::MemoryBufferDestroy(m_rhi_resource);
+            m_data_gpu = nullptr;
+        }
+    }
+
     void RHI_Buffer::RHI_CreateResource(const void* data)
     {
         RHI_DestroyResource();
@@ -55,6 +64,9 @@ namespace spartan
         {
             bool vertex                     = m_type == RHI_Buffer_Type::Vertex || m_type == RHI_Buffer_Type::Instance;
             VkBufferUsageFlags flags_usage  = vertex ? VK_BUFFER_USAGE_VERTEX_BUFFER_BIT : VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+
+            // vertex pulling: allow vertex, instance, and index buffers to be bound as storage buffers
+            flags_usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
              if (m_type == RHI_Buffer_Type::Vertex || m_type == RHI_Buffer_Type::Index)
              {
