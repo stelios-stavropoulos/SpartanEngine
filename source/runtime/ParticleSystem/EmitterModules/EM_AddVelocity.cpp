@@ -34,7 +34,7 @@ namespace spartan
             const math::Vector3 velocity_constant = velocity.GetConstValue();
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.particles[i].velocity = velocity_constant;
+                particle_data.velocities[i] = velocity_constant;
             }
         }
         else if (velocity.type == particle_property_type::RANGE)
@@ -42,7 +42,7 @@ namespace spartan
             for (uint32_t i = start_index; i < end_index; ++i)
             {
                 const math::Vector3 velocity_range = velocity.GetRandomRangedValue();
-                particle_data.particles[i].velocity = velocity_range;
+                particle_data.velocities[i] = velocity_range;
             }
         }
     }
@@ -54,7 +54,7 @@ namespace spartan
             const math::Vector3 velocity_constant = velocity.GetConstValue();
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                particle_data.particles[i].velocity += velocity_constant;
+                particle_data.velocities[i] += velocity_constant;
             }
         }
         else if (velocity.type == particle_property_type::RANGE)
@@ -62,7 +62,7 @@ namespace spartan
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
                 const math::Vector3 velocity_range = velocity.GetRandomRangedValue();
-                particle_data.particles[i].velocity += velocity_range;
+                particle_data.velocities[i] += velocity_range;
             }
         }
     }

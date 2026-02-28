@@ -467,30 +467,25 @@ namespace spartan
             return;
         }
 
-        // 1. Store the CPU-side data
         m_instances = instances;
         uint32_t instance_count = static_cast<uint32_t>(instances.size());
         size_t buffer_size = sizeof(Instance) * instance_count;
 
-        // 2. Determine if we need to recreate or just update
         bool needs_recreation = !m_instance_buffer || (m_instance_buffer->GetElementCount() != instance_count);
 
         if (needs_recreation)
         {
-            // Re-allocate the buffer if size changed or it doesn't exist
             m_instance_buffer = make_shared<RHI_Buffer>(
-                RHI_Buffer_Type::Instance,
+                RHI_Buffer_Type::ParticleCPU,
                 sizeof(Instance),
                 instance_count,
                 static_cast<const void*>(m_instances.data()),
-                false, // Keep non-mappable for performance if using UploadSubRegion
+                true,
                 ("instance_buffer_" + GetObjectName()).c_str()
             );
         }
         else
         {
-            // Buffer exists and size matches, just update the existing GPU memory
-            // Using UploadSubRegion as it's the standard way for Vertex/Index/Instance buffers in Spartan
             m_instance_buffer->UploadSubRegion(m_instances.data(), 0, buffer_size);
         }
 

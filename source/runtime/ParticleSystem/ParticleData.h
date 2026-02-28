@@ -29,17 +29,75 @@ namespace spartan
 {
     struct Particle
     {
-        math::Vector3 position;
-        math::Vector3 velocity;
-        Color color;
-        float lifetime;
-        float normalized_lifetime; // 0.0 at birth, 1.0 at death
-        math::Vector2 scale;
+        uint16_t position_x;  // 2 bytes
+        uint16_t position_y;  // 2 bytes
+        uint16_t position_z;  // 2 bytes
+
     };
+
     struct ParticleData
     {
-        std::vector<Particle> particles;
+        uint32_t max_particle_count = 0;
         uint32_t alive_particle_count = 0;
-        uint32_t max_particle_count = 1000;
+
+        float* lifetimes = nullptr;
+        float* normalized_lifetimes = nullptr;
+        math::Vector3* positions = nullptr;
+        math::Vector3* velocities = nullptr;
+        Color* colors = nullptr;
+        math::Vector2* scales = nullptr;
+        
+    private:
+        std::vector<uint8_t> buffer;
+
+    public:
+        ParticleData() = default;
+
+        explicit ParticleData(uint32_t initial_max_particle_count)
+        {
+            Resize(initial_max_particle_count);
+        }
+
+        ~ParticleData()
+        {
+            buffer.clear();
+        }
+
+        void Resize(uint32_t new_max_count)
+        {
+            max_particle_count = new_max_count;
+            alive_particle_count = 0;
+
+            // Calculate sizes for each attribute section
+            size_t size_pos = new_max_count * sizeof(math::Vector3);
+            size_t size_vel = new_max_count * sizeof(math::Vector3);
+            size_t size_color = new_max_count * sizeof(Color);
+            size_t size_scale = new_max_count * sizeof(math::Vector2);
+            size_t size_life = new_max_count * sizeof(float);
+            size_t size_norm_life = new_max_count * sizeof(float);
+
+            size_t total_size = size_pos + size_vel + size_color + size_scale + size_life + size_norm_life;
+
+            // Reallocate the entire buffer. 
+            buffer.clear();
+            buffer.resize(total_size);
+
+            // Assign pointers to the correct offsets within the single buffer
+            uint8_t* data_ptr = buffer.data();
+            positions = reinterpret_cast<math::Vector3*>(data_ptr);
+            velocities = reinterpret_cast<math::Vector3*>(data_ptr + size_pos);
+            colors = reinterpret_cast<Color*>(data_ptr + size_pos + size_vel);
+            scales = reinterpret_cast<math::Vector2*>(data_ptr + size_pos + size_vel + size_color);
+            lifetimes = reinterpret_cast<float*>(data_ptr + size_pos + size_vel + size_color + size_scale);
+            normalized_lifetimes = reinterpret_cast<float*>(data_ptr + size_pos + size_vel + size_color + size_scale + size_life);
+
+            // Optional: Zero out the memory if you want a truly clean slate
+            memset(buffer.data(), 0, total_size);
+        }
+
+        int32_t GetLastAliveIndex() const
+        {
+            return alive_particle_count - 1;
+        }
     };
 }

@@ -47,8 +47,6 @@ namespace spartan
     }
     Emitter::~Emitter()
     {
-        particle_data.particles.clear();
-
         initialization_modules.clear();
         update_modules.clear();
     }
@@ -56,15 +54,10 @@ namespace spartan
     void Emitter::ChangeSpawnRate(const float new_spawn_rate)
     {
         spawn_rate = new_spawn_rate;
-        particle_data.max_particle_count = (uint32_t)spawn_rate * 2;
+ 
+        particle_data.Resize((uint32_t)(spawn_rate * 2));
 
-        if (particle_data.alive_particle_count > particle_data.max_particle_count)
-        {
-            particle_data.alive_particle_count = particle_data.max_particle_count;
-        }
-
-        particle_data.particles.resize(particle_data.max_particle_count);
-
+        instances.clear();
         instances.resize(particle_data.max_particle_count);
     }
 
@@ -82,9 +75,9 @@ namespace spartan
 
         for (uint32_t i = 0; i < particle_data.alive_particle_count; )
         {
-            particle_data.particles[i].normalized_lifetime += delta_time_float / particle_data.particles[i].lifetime;
+            particle_data.normalized_lifetimes[i] += delta_time_float / particle_data.lifetimes[i];
 
-            if (particle_data.particles[i].normalized_lifetime >= 1.0f)
+            if (particle_data.normalized_lifetimes[i] >= 1.0f)
             {
                 if (particle_data.alive_particle_count == 0)
                 {
@@ -92,27 +85,28 @@ namespace spartan
                 }
                 // Swap with the last alive particle
                 const uint32_t last_alive_index = particle_data.alive_particle_count - 1;
-                particle_data.particles[i].lifetime = particle_data.particles[last_alive_index].lifetime;
-                particle_data.particles[i].normalized_lifetime = particle_data.particles[last_alive_index].normalized_lifetime;
-                particle_data.particles[i].position = particle_data.particles[last_alive_index].position;
-                particle_data.particles[i].velocity = particle_data.particles[last_alive_index].velocity;
-                particle_data.particles[i].color = particle_data.particles[last_alive_index].color;
-                particle_data.particles[i].scale = particle_data.particles[last_alive_index].scale;
+                particle_data.lifetimes[i] = particle_data.lifetimes[last_alive_index];
+                particle_data.normalized_lifetimes[i] = particle_data.normalized_lifetimes[last_alive_index];
+                particle_data.positions[i] = particle_data.positions[last_alive_index];
+                particle_data.velocities[i] = particle_data.velocities[last_alive_index];
+                particle_data.colors[i] = particle_data.colors[last_alive_index];
+                particle_data.scales[i] = particle_data.scales[last_alive_index];
 
-                particle_data.particles[last_alive_index].normalized_lifetime = 1.0f;
+                //particle_data.normalized_lifetimes[last_alive_index] = 1.0f;
 
                 // Decrease alive count
                 --particle_data.alive_particle_count;
             }
             else
             {
-                instances[i].SetParticleInstanceData(particle_data.particles[i].position, particle_data.particles[i].scale);
+                instances[i].SetParticleInstanceData(particle_data.positions[i], particle_data.scales[i]);
 
                 ++i;
             }
         }
 
-        renderable->SetParticleInstances(instances);
+        //renderable->SetParticleInstances(instances);
+        renderable->SetInstances(instances);
 
         for (EmitterModule* module : update_modules)
         {
@@ -122,14 +116,18 @@ namespace spartan
         spawn_accumulator += static_cast<float>(delta_time) * spawn_rate;
         const uint32_t max_spawn_count = static_cast<uint32_t>(spawn_accumulator);
         spawn_accumulator -= static_cast<float>(max_spawn_count);
-
+        //const uint32_t max_spawn_count = static_cast<uint32_t>(static_cast<float>(delta_time) * spawn_rate);
         if (max_spawn_count > 0)
         {
             const uint32_t start_index = particle_data.alive_particle_count;
-            const uint32_t end_index = std::min(start_index + max_spawn_count, particle_data.max_particle_count);
+            const uint32_t to_spawn = std::min(max_spawn_count, particle_data.max_particle_count - start_index);
+            const uint32_t end_index = start_index + to_spawn;
 
-            particle_data.alive_particle_count = end_index;
-            InitializeParticles(start_index, end_index);
+            if (to_spawn > 0)
+            {
+                InitializeParticles(start_index, end_index);
+                particle_data.alive_particle_count = end_index;
+            }
         }
     }
 }

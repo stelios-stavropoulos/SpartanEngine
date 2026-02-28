@@ -34,16 +34,16 @@ namespace spartan
             float lifetime_constant = lifetime.GetConstValue();
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.particles[i].lifetime = lifetime_constant;
-                particle_data.particles[i].normalized_lifetime = 0.0f;
+                particle_data.lifetimes[i] = lifetime_constant;
+                particle_data.normalized_lifetimes[i] = 0.0f;
             }
         }
         else if (lifetime.type == particle_property_type::RANGE)
         {
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.particles[i].lifetime = lifetime.GetRandomRangedValue();
-                particle_data.particles[i].normalized_lifetime = 0.0f;
+                particle_data.lifetimes[i] = lifetime.GetRandomRangedValue();
+                particle_data.normalized_lifetimes[i] = 0.0f;
             }
         }
     }

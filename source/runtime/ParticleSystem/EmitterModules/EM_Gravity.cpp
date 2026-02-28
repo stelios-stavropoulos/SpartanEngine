@@ -36,7 +36,7 @@ namespace spartan
             const math::Vector3 gravity_constant = gravity.GetConstValue() * (float)delta_time;
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                particle_data.particles[i].velocity += gravity_constant;
+                particle_data.velocities[i] += gravity_constant;
             }
             break;
         }
@@ -45,7 +45,7 @@ namespace spartan
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
                 const math::Vector3 gravity_range = gravity.GetRandomRangedValue() * (float)delta_time;
-                particle_data.particles[i].velocity += gravity_range;
+                particle_data.velocities[i] += gravity_range;
             }
             break;
         }

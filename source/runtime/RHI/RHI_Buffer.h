@@ -33,6 +33,7 @@ namespace spartan
         Vertex,
         Index,
         Instance,
+        ParticleCPU,
         Storage,
         Constant,
         ShaderBindingTable,
