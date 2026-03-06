@@ -28,35 +28,60 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace spartan
 {
-    class EmitterModule;
-    class RHI_Texture;
     class Renderable;
 
     class Emitter
     {
     public:
-        bool enabled = true;
-        std::string name = "New Emitter";
-
-        float spawn_rate = 1000.0f;
-
-        std::vector<EmitterModule*> initialization_modules;
-        std::vector<EmitterModule*> update_modules;
-
-        std::vector<Instance> instances;
-        Renderable* renderable;
-
-    public:
         Emitter(Renderable* renderable);
-        ~Emitter();
+        ~Emitter() = default;
 
-        void ChangeSpawnRate(const float new_spawn_rate);
-
-        void InitializeParticles(uint32_t start_index, uint32_t end_index);
         void Update(const double& delta_time);
+        void ChangeSpawnRate(float new_spawn_rate);
 
     private:
+
+        void SpawnParticles(uint32_t count);
+        void Kill(uint32_t index);
+        math::Vector3 RandomPointInSphere(float radius);
+
+    private:
+
+        Renderable* renderable = nullptr;
+        Instance* buffer_data = nullptr;
+
         ParticleData particle_data;
+
+        // Spawn
+        float spawn_rate = 30000.0f;
         float spawn_accumulator = 0.0f;
+
+        // Lifetime
+        bool lifetime_is_constant = false;
+        float lifetime_constant = 2.0f;
+        float lifetime_min = 1.0f;
+        float lifetime_max = 3.0f;
+
+        // Sphere
+        float sphere_radius = 1.0f;
+
+        // Velocity
+        math::Vector3 initial_velocity = math::Vector3(0, 5, 0);
+
+        // Scale
+        bool scale_is_constant = false;
+        math::Vector2 scale_constant = math::Vector2(1, 1);
+        math::Vector2 scale_min = math::Vector2(0.2f, 0.2f);
+        math::Vector2 scale_max = math::Vector2(1.0f, 1.0f);
+
+        // Color
+        bool color_is_constant = true;
+        Color color_constant = Color::standard_white;
+        Color color_min = Color::standard_white;
+        Color color_max = Color::standard_red;
+
+        // Physics
+        math::Vector3 gravity = math::Vector3(0, -9.81f, 0);
+        float damping = 0.98f;
     };
 }

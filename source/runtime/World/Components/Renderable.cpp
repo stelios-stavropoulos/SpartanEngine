@@ -457,40 +457,24 @@ namespace spartan
         Tick(); // update bounding boxes, frustum and distance culling
     }
 
-    void Renderable::SetParticleInstances(const vector<Instance>& instances)
+    void Renderable::SetParticleInstances(uint32_t max_particle_count)
     {
-        if (instances.empty())
-        {
-            m_instances.clear();
-            m_instance_buffer = nullptr;
-            m_bounding_box_dirty = true;
-            return;
-        }
+        m_instances.clear();
+        m_instance_buffer = nullptr;
 
-        m_instances = instances;
-        uint32_t instance_count = static_cast<uint32_t>(instances.size());
-        size_t buffer_size = sizeof(Instance) * instance_count;
+        m_instances.resize(max_particle_count);
 
-        bool needs_recreation = !m_instance_buffer || (m_instance_buffer->GetElementCount() != instance_count);
-
-        if (needs_recreation)
-        {
-            m_instance_buffer = make_shared<RHI_Buffer>(
-                RHI_Buffer_Type::ParticleCPU,
-                sizeof(Instance),
-                instance_count,
-                static_cast<const void*>(m_instances.data()),
-                true,
-                ("instance_buffer_" + GetObjectName()).c_str()
-            );
-        }
-        else
-        {
-            m_instance_buffer->UploadSubRegion(m_instances.data(), 0, buffer_size);
-        }
+        m_instance_buffer = make_shared<RHI_Buffer>(
+            RHI_Buffer_Type::Instance,
+            sizeof(Instance),
+            static_cast<uint32_t>(m_instances.size()),
+            nullptr,
+            true,
+            ("instance_buffer_" + GetObjectName()).c_str()
+        );
 
         m_bounding_box_dirty = true;
-        Tick(); // Update bounding boxes, frustum and distance culling
+        Tick(); // update bounding boxes, frustum and distance culling
     }
 
     void Renderable::SetInstances(const vector<Matrix>& transforms)

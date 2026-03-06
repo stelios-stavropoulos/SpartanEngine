@@ -28,106 +28,166 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <RHI/RHI_Texture.h>
 #include "../Resource/ResourceCache.h"
 #include "../World/Components/Renderable.h"
+#include "../Profiling/Profiler.h"
+#include "../RHI/RHI_Buffer.h"
 //===========================================
 
 namespace spartan
 {
     Emitter::Emitter(Renderable* renderable)
     {
+        this->renderable = renderable;
+
         renderable->SetMesh(MeshType::Quad);
+
         std::shared_ptr<Material> material = std::make_shared<Material>();
-        material->LoadFromFile(std::string(ResourceCache::GetProjectDirectory()) + "materials/ParticleDefault" + std::string(EXTENSION_MATERIAL));
+        material->LoadFromFile(
+            std::string(ResourceCache::GetProjectDirectory()) +
+            "materials/ParticleDefault" +
+            std::string(EXTENSION_MATERIAL)
+        );
+
         renderable->SetMaterial(material);
 
         ChangeSpawnRate(spawn_rate);
-
-        renderable->SetInstances(instances);
-
-        this->renderable = renderable;
-    }
-    Emitter::~Emitter()
-    {
-        initialization_modules.clear();
-        update_modules.clear();
     }
 
-    void Emitter::ChangeSpawnRate(const float new_spawn_rate)
+    void Emitter::ChangeSpawnRate(float new_spawn_rate)
     {
         spawn_rate = new_spawn_rate;
- 
-        particle_data.Resize((uint32_t)(spawn_rate * 2));
 
-        instances.clear();
-        instances.resize(particle_data.max_particle_count);
-    }
+        // Capacity = 2 seconds worth
+        particle_data.Resize(static_cast<uint32_t>(spawn_rate * 2.0f));
 
-    void Emitter::InitializeParticles(uint32_t start_index, uint32_t end_index)
-    {
-        for (EmitterModule* module : initialization_modules)
-        {
-            module->OnInitialize(particle_data, start_index, end_index);
-        }
+        renderable->SetParticleInstances(particle_data.max_particle_count);
+
+        RHI_Buffer* instances_buffer = renderable->GetInstanceBuffer();
+        if (!instances_buffer)
+            return;
+        buffer_data = static_cast<Instance*>(instances_buffer->GetMappedData());
+        if (!buffer_data)
+            return;
     }
 
     void Emitter::Update(const double& delta_time)
     {
-        const float delta_time_float = static_cast<float>(delta_time);
+        SP_PROFILE_CPU_START("CPU Particles")
 
-        for (uint32_t i = 0; i < particle_data.alive_particle_count; )
+        const float dt = static_cast<float>(delta_time);
+
+        const math::Vector3 gravity_dt = gravity * dt;
+        const float damping_dt = std::pow(damping, dt);
+
+        uint32_t i = 0;
+
+        while (i < particle_data.alive_particle_count)
         {
-            particle_data.normalized_lifetimes[i] += delta_time_float / particle_data.lifetimes[i];
+            // Lifetime
+            particle_data.normalized_lifetimes[i] += dt / particle_data.lifetimes[i];
 
             if (particle_data.normalized_lifetimes[i] >= 1.0f)
             {
-                if (particle_data.alive_particle_count == 0)
-                {
-                    continue;
-                }
-                // Swap with the last alive particle
-                const uint32_t last_alive_index = particle_data.alive_particle_count - 1;
-                particle_data.lifetimes[i] = particle_data.lifetimes[last_alive_index];
-                particle_data.normalized_lifetimes[i] = particle_data.normalized_lifetimes[last_alive_index];
-                particle_data.positions[i] = particle_data.positions[last_alive_index];
-                particle_data.velocities[i] = particle_data.velocities[last_alive_index];
-                particle_data.colors[i] = particle_data.colors[last_alive_index];
-                particle_data.scales[i] = particle_data.scales[last_alive_index];
-
-                //particle_data.normalized_lifetimes[last_alive_index] = 1.0f;
-
-                // Decrease alive count
-                --particle_data.alive_particle_count;
+                Kill(i);
+                continue;
             }
-            else
-            {
-                instances[i].SetParticleInstanceData(particle_data.positions[i], particle_data.scales[i]);
 
-                ++i;
-            }
+            // Physics
+            particle_data.velocities[i] += gravity_dt;
+            particle_data.positions[i] += particle_data.velocities[i] * dt;
+            particle_data.velocities[i] *= damping_dt;
+
+            float life_t = particle_data.normalized_lifetimes[i];
+
+            // GPU instance update
+            buffer_data[i].SetParticleInstanceData(
+                particle_data.positions[i],
+                particle_data.scales[i]
+            );
+
+            ++i;
         }
 
-        //renderable->SetParticleInstances(instances);
-        renderable->SetInstances(instances);
+        //renderable->SetParticleInstances();
 
-        for (EmitterModule* module : update_modules)
+        spawn_accumulator += dt * spawn_rate;
+
+        uint32_t spawn_count = static_cast<uint32_t>(spawn_accumulator);
+        spawn_accumulator -= static_cast<float>(spawn_count);
+
+        uint32_t available =
+            particle_data.max_particle_count -
+            particle_data.alive_particle_count;
+
+        spawn_count = std::min(spawn_count, available);
+
+        if (spawn_count > 0)
         {
-            module->OnUpdate(particle_data, delta_time);
+            SpawnParticles(spawn_count);
         }
 
-        spawn_accumulator += static_cast<float>(delta_time) * spawn_rate;
-        const uint32_t max_spawn_count = static_cast<uint32_t>(spawn_accumulator);
-        spawn_accumulator -= static_cast<float>(max_spawn_count);
-        //const uint32_t max_spawn_count = static_cast<uint32_t>(static_cast<float>(delta_time) * spawn_rate);
-        if (max_spawn_count > 0)
+        SP_PROFILE_CPU_END()
+    }
+
+    void Emitter::SpawnParticles(uint32_t count)
+    {
+        uint32_t start = particle_data.alive_particle_count;
+        uint32_t end = start + count;
+
+        for (uint32_t i = start; i < end; ++i)
         {
-            const uint32_t start_index = particle_data.alive_particle_count;
-            const uint32_t to_spawn = std::min(max_spawn_count, particle_data.max_particle_count - start_index);
-            const uint32_t end_index = start_index + to_spawn;
+            // Lifetime
+            float lifetime = lifetime_constant;
 
-            if (to_spawn > 0)
-            {
-                InitializeParticles(start_index, end_index);
-                particle_data.alive_particle_count = end_index;
-            }
+            particle_data.lifetimes[i] = lifetime;
+            particle_data.normalized_lifetimes[i] = 0.0f;
+
+            // Position
+            particle_data.positions[i] = RandomPointInSphere(sphere_radius);
+
+            // Velocity
+            particle_data.velocities[i] = initial_velocity;
+
+            // Scale
+            particle_data.scales[i] = scale_constant;
+
+            // Color
+            particle_data.colors[i] = color_constant;
         }
+
+        particle_data.alive_particle_count = end;
+    }
+
+    void Emitter::Kill(uint32_t index)
+    {
+        uint32_t last = particle_data.alive_particle_count - 1;
+
+        if (index != last)
+        {
+            particle_data.positions[index] = particle_data.positions[last];
+            particle_data.velocities[index] = particle_data.velocities[last];
+            particle_data.colors[index] = particle_data.colors[last];
+            particle_data.scales[index] = particle_data.scales[last];
+            particle_data.lifetimes[index] = particle_data.lifetimes[last];
+            particle_data.normalized_lifetimes[index] = particle_data.normalized_lifetimes[last];
+        }
+
+        --particle_data.alive_particle_count;
+    }
+
+    math::Vector3 Emitter::RandomPointInSphere(float radius)
+    {
+        float x = math::random(-1.0f, 1.0f);
+        float y = math::random(-1.0f, 1.0f);
+        float z = math::random(-1.0f, 1.0f);
+
+        float inv_mag = 1.0f / std::sqrt(x * x + y * y + z * z + 1e-8f);
+        float u = math::random(0.0f, 1.0f);
+        float scale = radius * u * u;
+
+        return math::Vector3(
+            x * inv_mag * scale,
+            y * inv_mag * scale,
+            z * inv_mag * scale
+        );
     }
 }

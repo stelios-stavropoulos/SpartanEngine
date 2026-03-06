@@ -87,10 +87,11 @@ namespace spartan
         bool HasInstancing() const            { return !m_instances.empty(); }
         RHI_Buffer* GetInstanceBuffer() const { return m_instance_buffer.get(); }
         uint32_t GetInstanceCount()  const    { return m_instances.empty() ? 1 : static_cast<uint32_t>(m_instances.size()); }
+        std::vector<Instance>& GetInstances() { return m_instances; }
         math::Matrix GetInstance(const uint32_t index, const bool to_world);
         void SetInstances(const std::vector<Instance>& instances);
         void SetInstances(const std::vector<math::Matrix>& transforms);
-        void SetParticleInstances(const std::vector<Instance>& instances);
+        void SetParticleInstances(uint32_t max_particle_count);
 
         // render distance
         float GetMaxRenderDistance() const                         { return m_max_distance_render; }

@@ -2433,7 +2433,7 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
         return;
 
     ImGui::Separator();
-
+    /*
     for (size_t i = 0; i < particle_system_CPU->emitters.size();)
     {
         Emitter* emitter = particle_system_CPU->emitters[i];
@@ -2668,7 +2668,7 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
 
         ++i;
     }
-
+    */
     if (ImGui::Button("Add Emitter", ImVec2(-1, 0)))
     {
         Renderable* renderable = particle_system_CPU->GetEntity()->AddComponent<Renderable>();
