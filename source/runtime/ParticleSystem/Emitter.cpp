@@ -65,18 +65,33 @@ namespace spartan
         if (!instances_buffer)
             return;
         buffer_data = static_cast<Instance*>(instances_buffer->GetMappedData());
-        if (!buffer_data)
-            return;
+    }
+
+    inline uint32_t hash(uint32_t x)
+    {
+        x = (x ^ 61) ^ (x >> 16);
+        x *= 9;
+        x = x ^ (x >> 4);
+        x *= 0x27d4eb2d;
+        x = x ^ (x >> 15);
+        return x;
+    }
+
+    inline float random_float(uint32_t seed)
+    {
+        return (hash(seed) & 0x00FFFFFF) / float(0x01000000);
     }
 
     void Emitter::Update(const double& delta_time)
     {
-        SP_PROFILE_CPU_START("CPU Particles")
+        SP_PROFILE_CPU_START("CPU Particles Update")
 
         const float dt = static_cast<float>(delta_time);
 
+        uint64_t frame_id = Renderer::GetFrameNumber();
+
         const math::Vector3 gravity_dt = gravity * dt;
-        const float damping_dt = std::pow(damping, dt);
+        float damping_dt = 1.0f - (1.0f - damping) * dt;
 
         uint32_t i = 0;
 
@@ -108,6 +123,9 @@ namespace spartan
         }
 
         //renderable->SetParticleInstances();
+        SP_PROFILE_CPU_END()
+
+        SP_PROFILE_CPU_START("CPU Particles Spawn")
 
         spawn_accumulator += dt * spawn_rate;
 
@@ -122,13 +140,13 @@ namespace spartan
 
         if (spawn_count > 0)
         {
-            SpawnParticles(spawn_count);
+            SpawnParticles(spawn_count, frame_id);
         }
 
         SP_PROFILE_CPU_END()
     }
 
-    void Emitter::SpawnParticles(uint32_t count)
+    void Emitter::SpawnParticles(uint32_t count, uint64_t frame_id)
     {
         uint32_t start = particle_data.alive_particle_count;
         uint32_t end = start + count;
@@ -142,7 +160,7 @@ namespace spartan
             particle_data.normalized_lifetimes[i] = 0.0f;
 
             // Position
-            particle_data.positions[i] = RandomPointInSphere(sphere_radius);
+            particle_data.positions[i] = RandomPointInSphere(sphere_radius, i, frame_id);
 
             // Velocity
             particle_data.velocities[i] = initial_velocity;
@@ -174,14 +192,21 @@ namespace spartan
         --particle_data.alive_particle_count;
     }
 
-    math::Vector3 Emitter::RandomPointInSphere(float radius)
+    inline math::Vector3 Emitter::RandomPointInSphere(float radius, uint32_t particle_id, uint64_t frame_id)
     {
-        float x = math::random(-1.0f, 1.0f);
-        float y = math::random(-1.0f, 1.0f);
-        float z = math::random(-1.0f, 1.0f);
+        // build deterministic seeds
+        uint32_t seed0 = particle_id * 73856093u ^ (uint32_t)frame_id;
+        uint32_t seed1 = particle_id * 19349663u ^ (uint32_t)(frame_id >> 32);
+        uint32_t seed2 = particle_id * 83492791u ^ (uint32_t)(frame_id + 17);
+        uint32_t seed3 = particle_id * 2654435761u ^ (uint32_t)(frame_id + 101);
+
+        float x = random_float(seed0) * 2.0f - 1.0f;
+        float y = random_float(seed1) * 2.0f - 1.0f;
+        float z = random_float(seed2) * 2.0f - 1.0f;
 
         float inv_mag = 1.0f / std::sqrt(x * x + y * y + z * z + 1e-8f);
-        float u = math::random(0.0f, 1.0f);
+
+        float u = random_float(seed3);
         float scale = radius * u * u;
 
         return math::Vector3(

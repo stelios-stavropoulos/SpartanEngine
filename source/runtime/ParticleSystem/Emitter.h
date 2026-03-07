@@ -41,9 +41,9 @@ namespace spartan
 
     private:
 
-        void SpawnParticles(uint32_t count);
+        void SpawnParticles(uint32_t count, uint64_t frame_id);
         void Kill(uint32_t index);
-        math::Vector3 RandomPointInSphere(float radius);
+        inline math::Vector3 RandomPointInSphere(float radius, uint32_t particle_id, uint64_t frame_id);
 
     private:
 
