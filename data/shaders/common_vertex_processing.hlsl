@@ -41,6 +41,18 @@ struct Vertex_PosUvNorTan
     uint instance_scale            : INSTANCE_SCALE;
 };
 
+struct Vertex_UVParticleInstance
+{
+    float4 position : POSITION;
+    float2 uv : TEXCOORD;
+    float3 normal : NORMAL;
+    float3 tangent : TANGENT;
+    
+    float3 instance_pos : INSTANCE_POSITION;
+    float2 instance_scale : INSTANCE_SCALE;
+    float4 instance_color : INSTANCE_COLOR;
+};
+
 // loads vertex data from the global geometry buffer instead of relying on fixed-function
 // input assembly. indirect draws always use identity instances since per-draw transforms
 // come from the indirect draw data buffer, so instance fields are zeroed.
@@ -71,6 +83,9 @@ struct gbuffer_vertex
     float3 normal            : NORMAL_WORLD;
     float3 tangent           : TANGENT_WORLD;
     float4 uv_misc           : TEXCOORD;  // xy = uv, z = height_percent, w = instance_id - packed together to reduced the interpolators (shader registers) the gpu needs to track
+#if PARTICLE_PASS
+    float4 color : COLOR;
+#endif
     float width_percent      : TEXCOORD2; // temp, will remove
     nointerpolation uint material_index : TEXCOORD3; // for indirect draws, material index passed from vs
 };
@@ -339,8 +354,30 @@ struct vertex_processing
                 vertex.tangent    = normalize(vertex.tangent);
             }
         }
+        else if (surface.is_billboard())
+        {
+            float3 instance_pivot = transform[3].xyz;
+
+            float3 camera_right = buffer_frame.view_inverted[0].xyz;
+            float3 camera_up = buffer_frame.view_inverted[1].xyz;
+
+            float scale_x = length(transform[0].xyz);
+            float scale_y = length(transform[1].xyz);
+    
+            float2 uv_offset;
+            uv_offset.x = vertex.uv_misc.x - 0.5f;
+            uv_offset.y = 0.5f - vertex.uv_misc.y;
+
+            position_world = instance_pivot +
+                     (uv_offset.x * scale_x * camera_right) +
+                     (uv_offset.y * scale_y * camera_up);
+
+            vertex.normal = normalize(buffer_frame.camera_position - position_world);
+            vertex.tangent = camera_right;
+        }
     }
 };
+
 
 gbuffer_vertex transform_to_world_space(Vertex_PosUvNorTan input, uint instance_id, matrix transform, inout float3 position_world, inout float3 position_world_previous)
 {

@@ -23,7 +23,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //= INCLUDES =================================
 #include "ParticleData.h"
-#include "../Rendering/Instance.h"
 //============================================
 
 namespace spartan
@@ -48,12 +47,12 @@ namespace spartan
     private:
 
         Renderable* renderable = nullptr;
-        Instance* buffer_data = nullptr;
+        ParticleInstance* buffer_data = nullptr;
 
         ParticleData particle_data;
 
         // Spawn
-        float spawn_rate = 30000.0f;
+        float spawn_rate = 250000.0f;
         float spawn_accumulator = 0.0f;
 
         // Lifetime
@@ -63,7 +62,7 @@ namespace spartan
         float lifetime_max = 3.0f;
 
         // Sphere
-        float sphere_radius = 1.0f;
+        float sphere_radius = 5.0f;
 
         // Velocity
         math::Vector3 initial_velocity = math::Vector3(0, 5, 0);
@@ -75,7 +74,7 @@ namespace spartan
         math::Vector2 scale_max = math::Vector2(1.0f, 1.0f);
 
         // Color
-        bool color_is_constant = true;
+        bool color_is_constant = false;
         Color color_constant = Color::standard_white;
         Color color_min = Color::standard_white;
         Color color_max = Color::standard_red;

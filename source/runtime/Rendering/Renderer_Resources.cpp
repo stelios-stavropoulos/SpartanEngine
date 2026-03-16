@@ -499,6 +499,17 @@ namespace spartan
             shader(Renderer_Shader::gbuffer_p)->Compile(RHI_Shader_Type::Pixel, shader_dir + "g_buffer.hlsl", async);
         }
 
+        // g-buffer particles
+        {
+            shader(Renderer_Shader::gbuffer_particles_v) = make_shared<RHI_Shader>();
+            shader(Renderer_Shader::gbuffer_particles_v)->AddDefine("PARTICLE_PASS", "1");
+            shader(Renderer_Shader::gbuffer_particles_v)->Compile(RHI_Shader_Type::Vertex, shader_dir + "g_buffer.hlsl", async, RHI_Vertex_Type::PosUvNorTanParticle);
+
+            shader(Renderer_Shader::gbuffer_particles_p) = make_shared<RHI_Shader>();
+            shader(Renderer_Shader::gbuffer_particles_p)->AddDefine("PARTICLE_PASS", "1");
+            shader(Renderer_Shader::gbuffer_particles_p)->Compile(RHI_Shader_Type::Pixel, shader_dir + "g_buffer.hlsl", async);
+        }
+
         // tessellation
         {
             shader(Renderer_Shader::tessellation_h) = make_shared<RHI_Shader>();

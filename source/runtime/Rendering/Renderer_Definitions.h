@@ -269,6 +269,9 @@ namespace spartan
         texture_compress_bc1_c,
         texture_compress_bc3_c,
         texture_compress_bc5_c,
+        // cpu particles
+        gbuffer_particles_v,
+        gbuffer_particles_p,
         max
     };
     

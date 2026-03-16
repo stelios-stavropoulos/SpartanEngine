@@ -32,6 +32,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "../../Rendering/Material.h"
 SP_WARNINGS_OFF
 #include "../IO/pugixml.hpp"
+#include "../ParticleSystem/ParticleData.h"
 SP_WARNINGS_ON
 //===========================================
 
@@ -466,11 +467,11 @@ namespace spartan
 
         m_instance_buffer = make_shared<RHI_Buffer>(
             RHI_Buffer_Type::Instance,
-            sizeof(Instance),
-            static_cast<uint32_t>(m_instances.size()),
+            sizeof(ParticleInstance),
+            max_particle_count,
             nullptr,
             true,
-            ("instance_buffer_" + GetObjectName()).c_str()
+            ("particle_instance_buffer_" + GetObjectName()).c_str()
         );
 
         m_bounding_box_dirty = true;

@@ -28,6 +28,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "RHI_Vertex.h"
 #include "../Core/SpartanObject.h"
 #include "../Logging/Log.h"
+#include "../ParticleSystem/ParticleData.h"
 //================================
 
 namespace spartan
@@ -117,10 +118,24 @@ namespace spartan
                 };
 
                 m_vertex_size = sizeof(RHI_Vertex_PosTexNorTan);
+                m_instance_type = RHI_Instance_Type::Packed;
+            }
+            else if (vertex_type == RHI_Vertex_Type::PosUvNorTanParticle)
+            {
+                m_vertex_attributes =
+                {
+                    { "POSITION", 0, binding, RHI_Format::R32G32B32_Float, offsetof(RHI_Vertex_PosTexNorTan, pos) },
+                    { "TEXCOORD", 1, binding, RHI_Format::R32G32_Float,    offsetof(RHI_Vertex_PosTexNorTan, tex) },
+                    { "NORMAL",   2, binding, RHI_Format::R32G32B32_Float, offsetof(RHI_Vertex_PosTexNorTan, nor) },
+                    { "TANGENT",  3, binding, RHI_Format::R32G32B32_Float, offsetof(RHI_Vertex_PosTexNorTan, tan) }
+                };
+                m_vertex_size = sizeof(RHI_Vertex_ParticleInstance);
+                m_instance_type = RHI_Instance_Type::Particle;
             }
         }
 
         RHI_Vertex_Type GetVertexType()                                const { return m_vertex_type; }
+        RHI_Instance_Type GetInstanceType()                              const { return m_instance_type; }
         const uint32_t GetVertexSize()                                 const { return m_vertex_size; }
         const std::vector<VertexAttribute>& GetAttributeDescriptions() const { return m_vertex_attributes; }
         uint32_t GetAttributeCount()                                   const { return static_cast<uint32_t>(m_vertex_attributes.size()); }
@@ -131,6 +146,7 @@ namespace spartan
 
     private:
         RHI_Vertex_Type m_vertex_type;
+        RHI_Instance_Type m_instance_type;
         uint32_t m_vertex_size;
         bool _CreateResource();
         std::vector<VertexAttribute> m_vertex_attributes;

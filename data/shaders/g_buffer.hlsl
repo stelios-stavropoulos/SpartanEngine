@@ -112,6 +112,79 @@ float3 compute_flower_color(float height_percent, uint instance_id)
     return lerp(flower_base, tip, smoothstep(0.2f, 1.0f, height_percent));
 }
 
+#if PARTICLE_PASS
+gbuffer_vertex main_vs(Vertex_UVParticleInstance input, uint instance_id : SV_InstanceID)
+{
+    _draw = draw_data[buffer_pass.draw_index];
+    
+    float3 position_world = 0.0f;
+    float3 position_world_previous = 0.0f;
+    
+    MaterialParameters material = GetMaterial();
+    Surface surface;
+    surface.flags = material.flags;
+
+    gbuffer_vertex vertex;
+    vertex.uv_misc.w = instance_id;
+    
+    // compute UV with tiling and offset
+    float2 uv = input.uv * material.tiling + material.offset;
+    
+    // apply UV inversion: mirror along axis if enabled
+    float2 invert_mask = step(0.5f, material.invert_uv);
+    uv = lerp(uv, 2.0f * floor(uv) + 1.0f - uv, invert_mask);
+    vertex.uv_misc.xy = uv;
+    
+    // compute width and height percent for grass blade positioning
+    float width_percent = 0;
+    float height_percent = 0;
+    vertex.uv_misc.z = height_percent;
+    vertex.width_percent = width_percent;
+    
+    // compose instance transform and apply to base transform
+    matrix instance = float4x4(
+        float4(input.instance_scale.x, 0.0f, 0.0f, 0.0f),
+        float4(0.0f, input.instance_scale.y, 0.0f, 0.0f),
+        float4(0.0f, 0.0f, 1.0f, 0.0f),
+        float4(input.instance_pos.x, input.instance_pos.y, input.instance_pos.z, 1.0f)
+    );
+
+    matrix transform = _draw.transform;
+    transform = mul(instance, transform);
+    matrix transform_previous = mul(instance, pass_get_transform_previous());
+    
+    // transform position to world space
+    float3 position = mul(float4(input.instance_pos, 1), transform).xyz;
+    float3 position_previous = mul(float4(input.instance_pos, 1), transform_previous).xyz;
+
+    float2 uv_offset;
+    uv_offset.x = uv.x - 0.5f;
+    uv_offset.y = 0.5f - uv.y;
+
+    float3 camera_up = buffer_frame.view_inverted[1].xyz;
+    float3 camera_right = buffer_frame.view_inverted[0].xyz;
+
+    position_world = position +
+                     (uv_offset.x * input.instance_scale.x * camera_right) +
+                     (uv_offset.y * input.instance_scale.y * camera_up);
+
+    position_world_previous = position_previous +
+                              (uv_offset.x * input.instance_scale.x * camera_right) +
+                              (uv_offset.y * input.instance_scale.y * camera_up);
+    
+    vertex.position = float4(position_world, 1.0f);
+    vertex.position_previous = float4(position_world_previous, 1.0f);
+    vertex.normal = normalize(buffer_frame.camera_position - position_world);
+    vertex.tangent = camera_right;
+        
+    vertex.material_index = _draw.material_index;
+    vertex.color = input.instance_color;
+
+    return transform_to_clip_space(vertex, position_world, position_world_previous);
+}
+
+#else
+
 #ifdef INDIRECT_DRAW
 gbuffer_vertex main_vs(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID, [[vk::builtin("DrawIndex")]] uint draw_id : DRAW_INDEX)
 {
@@ -129,6 +202,8 @@ gbuffer_vertex main_vs(Vertex_PosUvNorTan input, uint instance_id : SV_InstanceI
     vertex.material_index          = _draw.material_index;
     return transform_to_clip_space(vertex, position_world, position_world_previous);
 }
+
+#endif // PARTICLE_PASS
 
 gbuffer main_ps(gbuffer_vertex vertex, bool is_front_face : SV_IsFrontFace)
 {
@@ -304,6 +379,10 @@ gbuffer main_ps(gbuffer_vertex vertex, bool is_front_face : SV_IsFrontFace)
         float roughness2      = roughness * roughness;
         roughness             = fast_sqrt(saturate(roughness2 + min(variance * adaptive, 0.02f)));
     }
+
+#if PARTICLE_PASS
+    albedo.rgb *= vertex.color.rgb;
+#endif
 
     // output
     gbuffer g_buffer;

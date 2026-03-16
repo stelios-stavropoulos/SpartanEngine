@@ -689,6 +689,10 @@ namespace spartan
                     const Renderer_DrawCall& draw_call = m_draw_calls[i];
                     Renderable* renderable             = draw_call.renderable;
                     Material* material                 = renderable->GetMaterial();
+
+                    if (material->GetProperty(MaterialProperty::IsBillboard) == 1)
+                        continue;
+
                     if (!material || !draw_call.camera_visible)
                         continue;
 
@@ -747,7 +751,97 @@ namespace spartan
                     }
                 }
             }
-    
+
+            {
+                RHI_PipelineState pso;
+                pso.name = is_transparent_pass ? "g_buffer_transparent" : "g_buffer_tessellated";
+                pso.shaders[RHI_Shader_Type::Vertex] = GetShader(Renderer_Shader::gbuffer_particles_v);
+                pso.shaders[RHI_Shader_Type::Pixel] = GetShader(Renderer_Shader::gbuffer_particles_p);
+                pso.blend_state = GetBlendState(Renderer_BlendState::Alpha);
+                pso.rasterizer_state = cvar_wireframe.GetValueAs<bool>() ? GetRasterizerState(Renderer_RasterizerState::Wireframe) : GetRasterizerState(Renderer_RasterizerState::Solid);
+                pso.depth_stencil_state = is_transparent_pass ? GetDepthStencilState(Renderer_DepthStencilState::ReadWrite) : GetDepthStencilState(Renderer_DepthStencilState::ReadGreaterEqual);
+                pso.vrs_input_texture = cvar_variable_rate_shading.GetValueAs<bool>() ? GetRenderTarget(Renderer_RenderTarget::shading_rate) : nullptr;
+                pso.resolution_scale = true;
+                pso.render_target_color_textures[0] = tex_color;
+                pso.render_target_color_textures[1] = tex_normal;
+                pso.render_target_color_textures[2] = tex_material;
+                pso.render_target_color_textures[3] = tex_velocity;
+                pso.render_target_depth_texture = tex_depth;
+                pso.clear_color[0] = rhi_color_load;
+                pso.clear_color[1] = rhi_color_load;
+                pso.clear_color[2] = rhi_color_load;
+                pso.clear_color[3] = rhi_color_load;
+
+                bool pipeline_set = false;
+
+                for (uint32_t i = 0; i < m_draw_call_count; i++)
+                {
+                    const Renderer_DrawCall& draw_call = m_draw_calls[i];
+                    Renderable* renderable = draw_call.renderable;
+                    Material* material = renderable->GetMaterial();
+
+                    if (material->GetProperty(MaterialProperty::IsBillboard) == 0)
+                        continue;
+
+                    if (!material || !draw_call.camera_visible)
+                        continue;
+
+                    if (is_transparent_pass)
+                    {
+                        if (!material->IsTransparent())
+                            continue;
+                    }
+                    else
+                    {
+                        if (material->IsTransparent())
+                            continue;
+
+                        if (!IsCpuDrivenDraw(draw_call, material))
+                            continue;
+                    }
+
+                    {
+                        bool is_tessellated = material->GetProperty(MaterialProperty::Tessellation) > 0.0f;
+                        RHI_Shader* hull = is_tessellated ? GetShader(Renderer_Shader::tessellation_h) : nullptr;
+                        RHI_Shader* domain = is_tessellated ? GetShader(Renderer_Shader::tessellation_d) : nullptr;
+
+                        if (!pipeline_set || pso.shaders[RHI_Shader_Type::Hull] != hull || pso.shaders[RHI_Shader_Type::Domain] != domain)
+                        {
+                            pso.shaders[RHI_Shader_Type::Hull] = hull;
+                            pso.shaders[RHI_Shader_Type::Domain] = domain;
+                            cmd_list->SetPipelineState(pso);
+                            pipeline_set = true;
+                        }
+                    }
+
+                    {
+                        Entity* entity = renderable->GetEntity();
+                        m_pcb_pass_cpu.draw_index = draw_call.draw_data_index;
+                        m_pcb_pass_cpu.is_transparent = is_transparent_pass ? 1 : 0;
+                        m_pcb_pass_cpu.material_index = material->GetIndex();
+                        cmd_list->PushConstants(m_pcb_pass_cpu);
+
+                        entity->SetMatrixPrevious(entity->GetMatrix());
+                    }
+
+                    {
+                        cmd_list->SetCullMode(cvar_wireframe.GetValueAs<bool>() ? RHI_CullMode::None : static_cast<RHI_CullMode>(material->GetProperty(MaterialProperty::CullMode)));
+                        cmd_list->SetBufferVertex(renderable->GetVertexBuffer(), renderable->GetInstanceBuffer());
+                        cmd_list->SetBufferIndex(renderable->GetIndexBuffer());
+
+                        cmd_list->DrawIndexed(
+                            renderable->GetIndexCount(draw_call.lod_index),
+                            renderable->GetIndexOffset(draw_call.lod_index),
+                            renderable->GetVertexOffset(draw_call.lod_index),
+                            draw_call.instance_index,
+                            draw_call.instance_count
+                        );
+
+                        pso.clear_depth = rhi_depth_load;
+                    }
+                }
+            }
+
             // early transitions
             tex_color->SetLayout(RHI_Image_Layout::General, cmd_list);
             tex_normal->SetLayout(RHI_Image_Layout::General, cmd_list);

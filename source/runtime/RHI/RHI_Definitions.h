@@ -221,12 +221,19 @@ namespace spartan
 
     enum class RHI_Vertex_Type
     {
-
         Pos,
         PosCol,
         PosUv,
         PosUvNorTan,
         Pos2dUvCol8,
+        PosUvNorTanParticle,
+        Max
+    };
+
+    enum class RHI_Instance_Type
+    {
+        Packed,
+        Particle,
         Max
     };
 

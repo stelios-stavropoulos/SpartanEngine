@@ -34,7 +34,7 @@ namespace spartan
             float lifetime_constant = lifetime.GetConstValue();
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.lifetimes[i] = lifetime_constant;
+                particle_data.inv_lifetimes[i] = 1.0f / lifetime_constant;
                 particle_data.normalized_lifetimes[i] = 0.0f;
             }
         }
@@ -42,7 +42,7 @@ namespace spartan
         {
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.lifetimes[i] = lifetime.GetRandomRangedValue();
+                particle_data.inv_lifetimes[i] = 1.0f / lifetime.GetRandomRangedValue();
                 particle_data.normalized_lifetimes[i] = 0.0f;
             }
         }

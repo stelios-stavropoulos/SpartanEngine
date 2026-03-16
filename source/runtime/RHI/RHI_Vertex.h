@@ -128,9 +128,41 @@ namespace spartan
         float tan[3] = { 0, 0, 0 };
     };
 
+    struct RHI_Vertex_ParticleInstance
+    {
+        RHI_Vertex_ParticleInstance() = default;
+        RHI_Vertex_ParticleInstance(
+            const math::Vector3& pos,
+            const math::Vector2& tex,
+            const math::Vector3& nor = math::Vector3::Zero,
+            const math::Vector3& tan = math::Vector3::Zero)
+        {
+            this->pos[0] = pos.x;
+            this->pos[1] = pos.y;
+            this->pos[2] = pos.z;
+
+            this->tex[0] = tex.x;
+            this->tex[1] = tex.y;
+
+            this->nor[0] = nor.x;
+            this->nor[1] = nor.y;
+            this->nor[2] = nor.z;
+
+            this->tan[0] = tan.x;
+            this->tan[1] = tan.y;
+            this->tan[2] = tan.z;
+        }
+
+        float pos[3] = { 0, 0, 0 };
+        float tex[2] = { 0, 0 };
+        float nor[3] = { 0, 0, 0 };
+        float tan[3] = { 0, 0, 0 };
+    };
+
     SP_ASSERT_STATIC_IS_TRIVIALLY_COPYABLE(RHI_Vertex_Pos);
     SP_ASSERT_STATIC_IS_TRIVIALLY_COPYABLE(RHI_Vertex_PosTex);
     SP_ASSERT_STATIC_IS_TRIVIALLY_COPYABLE(RHI_Vertex_PosCol);
     SP_ASSERT_STATIC_IS_TRIVIALLY_COPYABLE(RHI_Vertex_Pos2dTexCol8);
     SP_ASSERT_STATIC_IS_TRIVIALLY_COPYABLE(RHI_Vertex_PosTexNorTan);
+    SP_ASSERT_STATIC_IS_TRIVIALLY_COPYABLE(RHI_Vertex_ParticleInstance);
 }

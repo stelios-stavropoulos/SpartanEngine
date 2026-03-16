@@ -22,14 +22,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //= INCLUDES ================================
 #include "pch.h"
 #include "Emitter.h"
-#include "EmitterModule.h"
 #include "../Rendering/Renderer.h"
 #include "../Rendering/Material.h"
-#include <RHI/RHI_Texture.h>
 #include "../Resource/ResourceCache.h"
 #include "../World/Components/Renderable.h"
 #include "../Profiling/Profiler.h"
 #include "../RHI/RHI_Buffer.h"
+#include "../Core/ThreadPool.h"
 //===========================================
 
 namespace spartan
@@ -57,14 +56,14 @@ namespace spartan
         spawn_rate = new_spawn_rate;
 
         // Capacity = 2 seconds worth
-        particle_data.Resize(static_cast<uint32_t>(spawn_rate * 2.0f));
+        particle_data.Resize(static_cast<uint32_t>(spawn_rate * lifetime_constant));
 
         renderable->SetParticleInstances(particle_data.max_particle_count);
 
         RHI_Buffer* instances_buffer = renderable->GetInstanceBuffer();
         if (!instances_buffer)
             return;
-        buffer_data = static_cast<Instance*>(instances_buffer->GetMappedData());
+        buffer_data = static_cast<ParticleInstance*>(instances_buffer->GetMappedData());
     }
 
     inline uint32_t hash(uint32_t x)
@@ -93,34 +92,128 @@ namespace spartan
         const math::Vector3 gravity_dt = gravity * dt;
         float damping_dt = 1.0f - (1.0f - damping) * dt;
 
-        uint32_t i = 0;
+        int32_t i = 0;
 
-        while (i < particle_data.alive_particle_count)
-        {
-            // Lifetime
-            particle_data.normalized_lifetimes[i] += dt / particle_data.lifetimes[i];
+        int32_t last_alive_index = (int32_t)particle_data.alive_particle_count - 1;
 
-            if (particle_data.normalized_lifetimes[i] >= 1.0f)
-            {
-                Kill(i);
-                continue;
-            }
+        auto my_func = [this, dt, gravity_dt, damping_dt](int32_t start, int32_t end) {
+                for (int32_t i = start; i < end - 3; i+=4)
+                {
+                    // Lifetime
+                    particle_data.normalized_lifetimes[i] += dt * particle_data.inv_lifetimes[i];
+                    particle_data.normalized_lifetimes[i + 1] += dt * particle_data.inv_lifetimes[i + 1];
+                    particle_data.normalized_lifetimes[i + 2] += dt * particle_data.inv_lifetimes[i + 2];
+                    particle_data.normalized_lifetimes[i + 3] += dt * particle_data.inv_lifetimes[i + 3];
+                    //if (particle_data.normalized_lifetimes[i] >= 1.0f)
+                    //{
+                    //    Kill(i);
+                    //    continue;
+                    //}
+                    // Color
+                    // Physics
+                    particle_data.velocities[i] = (particle_data.velocities[i] + gravity_dt) * damping_dt;
+                    particle_data.velocities[i + 1] = (particle_data.velocities[i + 1] + gravity_dt) * damping_dt;
+                    particle_data.velocities[i + 2] = (particle_data.velocities[i + 2] + gravity_dt) * damping_dt;
+                    particle_data.velocities[i + 3] = (particle_data.velocities[i + 3] + gravity_dt) * damping_dt;
+                    particle_data.positions[i] += particle_data.velocities[i] * dt;
+                    particle_data.positions[i + 1] += particle_data.velocities[i + 1] * dt;
+                    particle_data.positions[i + 2] += particle_data.velocities[i + 2] * dt;
+                    particle_data.positions[i + 3] += particle_data.velocities[i + 3] * dt;
+                    particle_data.positions[i + 4] += particle_data.velocities[i + 4] * dt;
+                    // Update GPU buffer
+                    buffer_data[i].position = particle_data.positions[i];
+                    buffer_data[i + 1].position = particle_data.positions[i + 1];
+                    buffer_data[i + 2].position = particle_data.positions[i + 2];
+                    buffer_data[i + 3].position = particle_data.positions[i + 3];
+                    buffer_data[i].scale = particle_data.scales[i];
+                    buffer_data[i + 1].scale = particle_data.scales[i + 1];
+                    buffer_data[i + 2].scale = particle_data.scales[i + 2];
+                    buffer_data[i + 3].scale = particle_data.scales[i + 3];
+                    buffer_data[i].color = particle_data.colors[i];
+                    buffer_data[i + 1].color = particle_data.colors[i + 1];
+                    buffer_data[i + 2].color = particle_data.colors[i + 2];
+                    buffer_data[i + 3].color = particle_data.colors[i + 3];
+                }
+            };
 
-            // Physics
-            particle_data.velocities[i] += gravity_dt;
-            particle_data.positions[i] += particle_data.velocities[i] * dt;
-            particle_data.velocities[i] *= damping_dt;
+        int32_t thread_count = ThreadPool::GetIdleThreadCount();
 
-            float life_t = particle_data.normalized_lifetimes[i];
+        int32_t chunk_size = particle_data.max_particle_count / thread_count;
 
-            // GPU instance update
-            buffer_data[i].SetParticleInstanceData(
-                particle_data.positions[i],
-                particle_data.scales[i]
-            );
+        ThreadPool::ParallelLoop(my_func, static_cast<uint32_t>(particle_data.max_particle_count));
 
-            ++i;
-        }
+        //for (int32_t t = 0; t < thread_count; ++t)
+        //{
+        //    int32_t start = t * chunk_size;
+        //    int32_t end = (t == thread_count - 1) ? particle_data.max_particle_count : start + chunk_size;
+
+        //    ThreadPool::AddTask([this, dt, gravity_dt, damping_dt, start, end]() {
+        //        for (int32_t i = start; i < end - 4; i+=4)
+        //        {
+        //            // Lifetime
+        //            particle_data.normalized_lifetimes[i] += dt * particle_data.inv_lifetimes[i];
+        //            particle_data.normalized_lifetimes[i+1] += dt * particle_data.inv_lifetimes[i+1];
+        //            particle_data.normalized_lifetimes[i+2] += dt * particle_data.inv_lifetimes[i+2];
+        //            particle_data.normalized_lifetimes[i+3] += dt * particle_data.inv_lifetimes[i+3];
+        //            //if (particle_data.normalized_lifetimes[i] >= 1.0f)
+        //            //{
+        //            //    Kill(i);
+        //            //    continue;
+        //            //}
+        //            // Color
+        //            // Physics
+        //            particle_data.velocities[i]   = (particle_data.velocities[i] + gravity_dt) * damping_dt;
+        //            particle_data.velocities[i+1] = (particle_data.velocities[i+1] + gravity_dt) * damping_dt;
+        //            particle_data.velocities[i+2] = (particle_data.velocities[i+2] + gravity_dt) * damping_dt;
+        //            particle_data.velocities[i+3] = (particle_data.velocities[i+3] + gravity_dt) * damping_dt;
+        //            particle_data.positions[i]   += particle_data.velocities[i] * dt;
+        //            particle_data.positions[i+1] += particle_data.velocities[i+1] * dt;
+        //            particle_data.positions[i+2] += particle_data.velocities[i+2] * dt;
+        //            particle_data.positions[i+3] += particle_data.velocities[i+3] * dt;
+        //            // Update GPU buffer
+        //            buffer_data[i].position   = particle_data.positions[i];
+        //            buffer_data[i+1].position = particle_data.positions[i+1];
+        //            buffer_data[i+2].position = particle_data.positions[i+2];
+        //            buffer_data[i+3].position = particle_data.positions[i+3];
+        //            buffer_data[i].scale      = particle_data.scales[i];
+        //            buffer_data[i+1].scale    = particle_data.scales[i+1];
+        //            buffer_data[i+2].scale    = particle_data.scales[i+2];
+        //            buffer_data[i+3].scale    = particle_data.scales[i+3];
+        //            buffer_data[i].color      = particle_data.colors[i];
+        //            buffer_data[i+1].color    = particle_data.colors[i+1];
+        //            buffer_data[i+2].color    = particle_data.colors[i+2];
+        //            buffer_data[i+3].color    = particle_data.colors[i+3];
+        //        }
+        //    });
+        //}
+
+        //ThreadPool::Flush();
+
+        //while (i < last_alive_index)
+        //{
+        //    //// Lifetime
+        //    //particle_data.normalized_lifetimes[i] += dt * particle_data.inv_lifetimes[i];
+
+        //    //if (particle_data.normalized_lifetimes[i] >= 1.0f)
+        //    //{
+        //    //    Kill(i);
+        //    //    continue;
+        //    //}
+
+        //    //// Color
+
+        //    //// Physics
+        //    //particle_data.velocities[i] += gravity_dt;
+        //    //particle_data.positions[i] += particle_data.velocities[i] * dt;
+        //    //particle_data.velocities[i] *= damping_dt;
+
+        //    // Update GPU buffer
+        //    buffer_data[i].position = particle_data.positions[i];
+        //    buffer_data[i].scale = particle_data.scales[i];
+        //    buffer_data[i].color = particle_data.colors[i];
+
+        //    ++i;
+        //}
 
         //renderable->SetParticleInstances();
         SP_PROFILE_CPU_END()
@@ -156,7 +249,7 @@ namespace spartan
             // Lifetime
             float lifetime = lifetime_constant;
 
-            particle_data.lifetimes[i] = lifetime;
+            particle_data.inv_lifetimes[i] = 1.0f / lifetime;
             particle_data.normalized_lifetimes[i] = 0.0f;
 
             // Position
@@ -185,7 +278,7 @@ namespace spartan
             particle_data.velocities[index] = particle_data.velocities[last];
             particle_data.colors[index] = particle_data.colors[last];
             particle_data.scales[index] = particle_data.scales[last];
-            particle_data.lifetimes[index] = particle_data.lifetimes[last];
+            particle_data.inv_lifetimes[index] = particle_data.inv_lifetimes[last];
             particle_data.normalized_lifetimes[index] = particle_data.normalized_lifetimes[last];
         }
 

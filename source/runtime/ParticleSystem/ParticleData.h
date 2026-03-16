@@ -27,12 +27,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace spartan
 {
-    struct Particle
+    struct ParticleInstance
     {
-        uint16_t position_x;  // 2 bytes
-        uint16_t position_y;  // 2 bytes
-        uint16_t position_z;  // 2 bytes
-
+        math::Vector3 position;
+        math::Vector2 scale;
+        Color color;
     };
 
     struct ParticleData
@@ -40,7 +39,7 @@ namespace spartan
         uint32_t max_particle_count = 0;
         uint32_t alive_particle_count = 0;
 
-        float* lifetimes = nullptr;
+        float* inv_lifetimes = nullptr;
         float* normalized_lifetimes = nullptr;
         math::Vector3* positions = nullptr;
         math::Vector3* velocities = nullptr;
@@ -88,7 +87,7 @@ namespace spartan
             velocities = reinterpret_cast<math::Vector3*>(data_ptr + size_pos);
             colors = reinterpret_cast<Color*>(data_ptr + size_pos + size_vel);
             scales = reinterpret_cast<math::Vector2*>(data_ptr + size_pos + size_vel + size_color);
-            lifetimes = reinterpret_cast<float*>(data_ptr + size_pos + size_vel + size_color + size_scale);
+            inv_lifetimes = reinterpret_cast<float*>(data_ptr + size_pos + size_vel + size_color + size_scale);
             normalized_lifetimes = reinterpret_cast<float*>(data_ptr + size_pos + size_vel + size_color + size_scale + size_life);
 
             // Optional: Zero out the memory if you want a truly clean slate
