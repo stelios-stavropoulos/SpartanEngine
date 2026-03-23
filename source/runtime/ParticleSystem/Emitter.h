@@ -52,7 +52,7 @@ namespace spartan
         ParticleData particle_data;
 
         // Spawn
-        float spawn_rate = 250000.0f;
+        float spawn_rate = 30000.0f;
         float spawn_accumulator = 0.0f;
 
         // Lifetime
