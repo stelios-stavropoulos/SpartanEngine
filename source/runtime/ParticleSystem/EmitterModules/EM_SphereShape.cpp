@@ -51,7 +51,7 @@ namespace spartan
             float radius_value = radius.GetConstValue();
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.positions[i] = RandomPointInSphere(radius_value);
+                //particle_data.positions[i] = RandomPointInSphere(radius_value);
             }
         }
         else if (radius.type == particle_property_type::RANGE)
@@ -60,7 +60,7 @@ namespace spartan
             {
                 float radius_value = radius.GetRandomRangedValue();
 
-                particle_data.positions[i] = RandomPointInSphere(radius_value);
+                //particle_data.positions[i] = RandomPointInSphere(radius_value);
             }
         }
     }

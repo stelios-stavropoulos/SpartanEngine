@@ -29,6 +29,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "../Profiling/Profiler.h"
 #include "../RHI/RHI_Buffer.h"
 #include "../Core/ThreadPool.h"
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 //===========================================
 
 namespace spartan
@@ -91,47 +94,106 @@ namespace spartan
 
         SP_PROFILE_CPU_START("CPU Particles Update")
 
-        const math::Vector3 gravity_dt = gravity * dt;
-        float damping_dt = 1.0f - (1.0f - damping) * dt;
+        const float grav_x = gravity.x * dt;
+        const float grav_y = gravity.y * dt;
+        const float grav_z = gravity.z * dt;
+        const float damping_dt = 1.0f - (1.0f - damping) * dt;
 
-        auto my_func = [this, dt, gravity_dt, damping_dt](int32_t start, int32_t end) {
-                for (int32_t i = start; i < end - 3; i+=4)
+        auto my_func = [this, dt, grav_x, grav_y, grav_z, damping_dt](int32_t start, int32_t end)
+        {
+#if defined(__AVX2__)
+                const __m256 dt_ps = _mm256_set1_ps(dt);
+                const __m256 damp_ps = _mm256_set1_ps(damping_dt);
+
+                const __m256 gx = _mm256_set1_ps(grav_x);
+                const __m256 gy = _mm256_set1_ps(grav_y);
+                const __m256 gz = _mm256_set1_ps(grav_z);
+
+                int32_t i = start;
+
+                for (; i <= end - 8; i += 8)
                 {
-                    // Lifetime
-                    particle_data.normalized_lifetimes[i] += dt * particle_data.inv_lifetimes[i];
-                    particle_data.normalized_lifetimes[i + 1] += dt * particle_data.inv_lifetimes[i + 1];
-                    particle_data.normalized_lifetimes[i + 2] += dt * particle_data.inv_lifetimes[i + 2];
-                    particle_data.normalized_lifetimes[i + 3] += dt * particle_data.inv_lifetimes[i + 3];
-                    //if (particle_data.normalized_lifetimes[i] >= 1.0f)
-                    //{
-                    //    Kill(i);
-                    //    continue;
-                    //}
-                    // Color
-                    // Physics
-                    particle_data.velocities[i] = (particle_data.velocities[i] + gravity_dt) * damping_dt;
-                    particle_data.velocities[i + 1] = (particle_data.velocities[i + 1] + gravity_dt) * damping_dt;
-                    particle_data.velocities[i + 2] = (particle_data.velocities[i + 2] + gravity_dt) * damping_dt;
-                    particle_data.velocities[i + 3] = (particle_data.velocities[i + 3] + gravity_dt) * damping_dt;
-                    particle_data.positions[i] += particle_data.velocities[i] * dt;
-                    particle_data.positions[i + 1] += particle_data.velocities[i + 1] * dt;
-                    particle_data.positions[i + 2] += particle_data.velocities[i + 2] * dt;
-                    particle_data.positions[i + 3] += particle_data.velocities[i + 3] * dt;
-                    // Update GPU buffer
-                    buffer_data[i].position = particle_data.positions[i];
-                    buffer_data[i + 1].position = particle_data.positions[i + 1];
-                    buffer_data[i + 2].position = particle_data.positions[i + 2];
-                    buffer_data[i + 3].position = particle_data.positions[i + 3];
-                    buffer_data[i].scale = particle_data.scales[i];
-                    buffer_data[i + 1].scale = particle_data.scales[i + 1];
-                    buffer_data[i + 2].scale = particle_data.scales[i + 2];
-                    buffer_data[i + 3].scale = particle_data.scales[i + 3];
-                    buffer_data[i].color = particle_data.colors[i];
-                    buffer_data[i + 1].color = particle_data.colors[i + 1];
-                    buffer_data[i + 2].color = particle_data.colors[i + 2];
-                    buffer_data[i + 3].color = particle_data.colors[i + 3];
+                    // -------- Lifetime --------
+                    __m256 life = _mm256_load_ps(&particle_data.normalized_lifetimes[i]);
+                    __m256 inv_life = _mm256_load_ps(&particle_data.inv_lifetimes[i]);
+                    life = _mm256_add_ps(life, _mm256_mul_ps(dt_ps, inv_life));
+                    _mm256_store_ps(&particle_data.normalized_lifetimes[i], life);
+
+                    // -------- Velocity --------
+                    __m256 vx = _mm256_load_ps(&particle_data.vel_x[i]);
+                    __m256 vy = _mm256_load_ps(&particle_data.vel_y[i]);
+                    __m256 vz = _mm256_load_ps(&particle_data.vel_z[i]);
+
+                    vx = _mm256_mul_ps(_mm256_add_ps(vx, gx), damp_ps);
+                    vy = _mm256_mul_ps(_mm256_add_ps(vy, gy), damp_ps);
+                    vz = _mm256_mul_ps(_mm256_add_ps(vz, gz), damp_ps);
+
+                    _mm256_store_ps(&particle_data.vel_x[i], vx);
+                    _mm256_store_ps(&particle_data.vel_y[i], vy);
+                    _mm256_store_ps(&particle_data.vel_z[i], vz);
+
+                    // -------- Position --------
+                    __m256 px = _mm256_load_ps(&particle_data.pos_x[i]);
+                    __m256 py = _mm256_load_ps(&particle_data.pos_y[i]);
+                    __m256 pz = _mm256_load_ps(&particle_data.pos_z[i]);
+
+                    px = _mm256_add_ps(px, _mm256_mul_ps(vx, dt_ps));
+                    py = _mm256_add_ps(py, _mm256_mul_ps(vy, dt_ps));
+                    pz = _mm256_add_ps(pz, _mm256_mul_ps(vz, dt_ps));
+
+                    _mm256_store_ps(&particle_data.pos_x[i], px);
+                    _mm256_store_ps(&particle_data.pos_y[i], py);
+                    _mm256_store_ps(&particle_data.pos_z[i], pz);
+
+                    // -------- GPU write (scalar, unavoidable AoS) --------
+                    for (int j = 0; j < 8; j++)
+                    {
+                        int idx = i + j;
+
+                        buffer_data[idx].position.x = particle_data.pos_x[idx];
+                        buffer_data[idx].position.y = particle_data.pos_y[idx];
+                        buffer_data[idx].position.z = particle_data.pos_z[idx];
+
+                        buffer_data[idx].scale.x = particle_data.scale_x[idx];
+                        buffer_data[idx].scale.y = particle_data.scale_y[idx];
+
+                        buffer_data[idx].color.r = particle_data.col_r[idx];
+                        buffer_data[idx].color.g = particle_data.col_g[idx];
+                        buffer_data[idx].color.b = particle_data.col_b[idx];
+                        buffer_data[idx].color.a = particle_data.col_a[idx];
+                    }
                 }
-            };
+#else
+            for (int32_t i = start; i < end; ++i)
+            {
+                // Lifetime
+                particle_data.normalized_lifetimes[i] += dt * particle_data.inv_lifetimes[i];
+
+                // Physics: Velocity
+                particle_data.vel_x[i] = (particle_data.vel_x[i] + grav_x) * damping_dt;
+                particle_data.vel_y[i] = (particle_data.vel_y[i] + grav_y) * damping_dt;
+                particle_data.vel_z[i] = (particle_data.vel_z[i] + grav_z) * damping_dt;
+
+                // Physics: Position
+                particle_data.pos_x[i] += particle_data.vel_x[i] * dt;
+                particle_data.pos_y[i] += particle_data.vel_y[i] * dt;
+                particle_data.pos_z[i] += particle_data.vel_z[i] * dt;
+
+                // Update GPU buffer (AoS format for the shader)
+                buffer_data[i].position.x = particle_data.pos_x[i];
+                buffer_data[i].position.y = particle_data.pos_y[i];
+                buffer_data[i].position.z = particle_data.pos_z[i];
+
+                buffer_data[i].scale.x = particle_data.scale_x[i];
+                buffer_data[i].scale.y = particle_data.scale_y[i];
+
+                buffer_data[i].color.r = particle_data.col_r[i];
+                buffer_data[i].color.g = particle_data.col_g[i];
+                buffer_data[i].color.b = particle_data.col_b[i];
+                buffer_data[i].color.a = particle_data.col_a[i];
+            }
+#endif
+        };
 
         if (particle_data.alive_particle_count > 0)
             ThreadPool::ParallelLoop(my_func, static_cast<uint32_t>(particle_data.alive_particle_count));
@@ -180,23 +242,25 @@ namespace spartan
 
         for (uint32_t i = start; i < end; ++i)
         {
-            // Lifetime
-            float lifetime = lifetime_constant;
-
-            particle_data.inv_lifetimes[i] = 1.0f / lifetime;
+            particle_data.inv_lifetimes[i] = 1.0f / lifetime_constant;
             particle_data.normalized_lifetimes[i] = 0.0f;
 
-            // Position
-            particle_data.positions[i] = RandomPointInSphere(sphere_radius, i, frame_id);
+            math::Vector3 pos = RandomPointInSphere(sphere_radius, i, frame_id);
+            particle_data.pos_x[i] = pos.x;
+            particle_data.pos_y[i] = pos.y;
+            particle_data.pos_z[i] = pos.z;
 
-            // Velocity
-            particle_data.velocities[i] = initial_velocity;
+            particle_data.vel_x[i] = initial_velocity.x;
+            particle_data.vel_y[i] = initial_velocity.y;
+            particle_data.vel_z[i] = initial_velocity.z;
 
-            // Scale
-            particle_data.scales[i] = scale_constant;
+            particle_data.scale_x[i] = scale_constant.x;
+            particle_data.scale_y[i] = scale_constant.y;
 
-            // Color
-            particle_data.colors[i] = color_constant;
+            particle_data.col_r[i] = color_constant.r;
+            particle_data.col_g[i] = color_constant.g;
+            particle_data.col_b[i] = color_constant.b;
+            particle_data.col_a[i] = color_constant.a;
         }
 
         particle_data.alive_particle_count = end;
@@ -208,10 +272,23 @@ namespace spartan
 
         if (index != last)
         {
-            particle_data.positions[index] = particle_data.positions[last];
-            particle_data.velocities[index] = particle_data.velocities[last];
-            particle_data.colors[index] = particle_data.colors[last];
-            particle_data.scales[index] = particle_data.scales[last];
+            // Swap all individual float components
+            particle_data.pos_x[index] = particle_data.pos_x[last];
+            particle_data.pos_y[index] = particle_data.pos_y[last];
+            particle_data.pos_z[index] = particle_data.pos_z[last];
+
+            particle_data.vel_x[index] = particle_data.vel_x[last];
+            particle_data.vel_y[index] = particle_data.vel_y[last];
+            particle_data.vel_z[index] = particle_data.vel_z[last];
+
+            particle_data.col_r[index] = particle_data.col_r[last];
+            particle_data.col_g[index] = particle_data.col_g[last];
+            particle_data.col_b[index] = particle_data.col_b[last];
+            particle_data.col_a[index] = particle_data.col_a[last];
+
+            particle_data.scale_x[index] = particle_data.scale_x[last];
+            particle_data.scale_y[index] = particle_data.scale_y[last];
+
             particle_data.inv_lifetimes[index] = particle_data.inv_lifetimes[last];
             particle_data.normalized_lifetimes[index] = particle_data.normalized_lifetimes[last];
         }

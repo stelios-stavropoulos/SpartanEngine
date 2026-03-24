@@ -34,7 +34,7 @@ namespace spartan
             Color color_constant = color.GetConstValue();
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.colors[i] = color_constant;
+                //particle_data.colors[i] = color_constant;
             }
         }
         else if (color.type == particle_property_type::RANGE)
@@ -42,7 +42,7 @@ namespace spartan
             for (uint32_t i = start_index; i < end_index; ++i)
             {
                 Color color_ranged = color.GetRandomRangedValue();
-                particle_data.colors[i] = color_ranged;
+                //particle_data.colors[i] = color_ranged;
             }
         }
     }
@@ -54,7 +54,7 @@ namespace spartan
             Color color_constant = color.GetConstValue();
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                particle_data.colors[i] = color_constant;
+                //particle_data.colors[i] = color_constant;
             }
         }
         else if (color.type == particle_property_type::RANGE)
@@ -62,7 +62,7 @@ namespace spartan
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
                 Color curr_color = Color::Lerp(color.range_value.first, color.range_value.second, particle_data.normalized_lifetimes[i]);
-                particle_data.colors[i] = curr_color;
+                //particle_data.colors[i] = curr_color;
             }
         }
     }

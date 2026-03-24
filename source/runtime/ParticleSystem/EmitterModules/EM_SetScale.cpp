@@ -34,7 +34,7 @@ namespace spartan
             const math::Vector2 scale_constant = scale.GetConstValue();
             for (uint32_t i = start_index; i < end_index; ++i)
             {
-                particle_data.scales[i] = scale_constant;
+                //particle_data.scales[i] = scale_constant;
             }
         }
         else if (scale.type == particle_property_type::RANGE)
@@ -42,7 +42,7 @@ namespace spartan
             for (uint32_t i = start_index; i < end_index; ++i)
             {
                 const math::Vector2 scale_range = scale.GetRandomRangedValue();
-                particle_data.scales[i] = scale_range;
+                //particle_data.scales[i] = scale_range;
             }
         }
     }
@@ -54,7 +54,7 @@ namespace spartan
             const math::Vector2 scale_constant = scale.GetConstValue();
             for (uint32_t i = 0; i < particle_data.alive_particle_count; ++i)
             {
-                particle_data.scales[i] += scale_constant;
+                //particle_data.scales[i] += scale_constant;
             }
         }
         else if (scale.type == particle_property_type::RANGE)
@@ -64,7 +64,7 @@ namespace spartan
                 float normalized_lifetime = particle_data.normalized_lifetimes[i];
                 float x = std::lerp(scale.range_value.first.x, scale.range_value.second.x, normalized_lifetime);
                 float y = std::lerp(scale.range_value.first.y, scale.range_value.second.y, normalized_lifetime);
-                particle_data.scales[i] += math::Vector2( x, y );
+                //particle_data.scales[i] += math::Vector2( x, y );
             }
         }
     }

@@ -27,6 +27,37 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace spartan
 {
+    template <typename T, std::size_t Alignment>
+    struct AlignedAllocator
+    {
+        using value_type = T;
+
+        AlignedAllocator() = default;
+        template <typename U>
+        AlignedAllocator(const AlignedAllocator<U, Alignment>&) noexcept {}
+
+        T* allocate(std::size_t n)
+        {
+            std::size_t size = n * sizeof(T);
+            // round size up to a multiple of alignment (required by aligned_alloc)
+            size = (size + Alignment - 1) & ~(Alignment - 1);
+            void* ptr = ::operator new(size, std::align_val_t{ Alignment });
+            if (!ptr) throw std::bad_alloc{};
+            return static_cast<T*>(ptr);
+        }
+
+        void deallocate(T* ptr, std::size_t) noexcept
+        {
+            ::operator delete(ptr, std::align_val_t{ Alignment });
+        }
+
+        template <typename U>
+        struct rebind { using other = AlignedAllocator<U, Alignment>; };
+
+        bool operator==(const AlignedAllocator&) const noexcept { return true; }
+        bool operator!=(const AlignedAllocator&) const noexcept { return false; }
+    };
+
     struct ParticleInstance
     {
         math::Vector3 position;
@@ -39,64 +70,73 @@ namespace spartan
         uint32_t max_particle_count = 0;
         uint32_t alive_particle_count = 0;
 
+        // Position
+        float* pos_x = nullptr;
+        float* pos_y = nullptr;
+        float* pos_z = nullptr;
+
+        // Velocity
+        float* vel_x = nullptr;
+        float* vel_y = nullptr;
+        float* vel_z = nullptr;
+
+        // Color (RGBA)
+        float* col_r = nullptr;
+        float* col_g = nullptr;
+        float* col_b = nullptr;
+        float* col_a = nullptr;
+
+        // Scale
+        float* scale_x = nullptr;
+        float* scale_y = nullptr;
+
+        // Life
         float* inv_lifetimes = nullptr;
         float* normalized_lifetimes = nullptr;
-        math::Vector3* positions = nullptr;
-        math::Vector3* velocities = nullptr;
-        Color* colors = nullptr;
-        math::Vector2* scales = nullptr;
-        
+
     private:
-        std::vector<uint8_t> buffer;
+        std::vector<float, AlignedAllocator<float, 32>> buffer;
 
     public:
         ParticleData() = default;
+        ~ParticleData() { buffer.clear(); }
 
-        explicit ParticleData(uint32_t initial_max_particle_count)
-        {
-            Resize(initial_max_particle_count);
-        }
-
-        ~ParticleData()
-        {
-            buffer.clear();
-        }
+        explicit ParticleData(uint32_t count) { Resize(count); }
 
         void Resize(uint32_t new_max_count)
         {
+
             max_particle_count = new_max_count;
             alive_particle_count = 0;
 
-            // Calculate sizes for each attribute section
-            size_t size_pos = new_max_count * sizeof(math::Vector3);
-            size_t size_vel = new_max_count * sizeof(math::Vector3);
-            size_t size_color = new_max_count * sizeof(Color);
-            size_t size_scale = new_max_count * sizeof(math::Vector2);
-            size_t size_life = new_max_count * sizeof(float);
-            size_t size_norm_life = new_max_count * sizeof(float);
+            // 14 total float streams (3 pos, 3 vel, 4 col, 2 scale, 2 life)
+            // We align each stream to 32 bytes (8 floats) for AVX compatibility
+            size_t stride = (new_max_count + 7) & ~7;
+            size_t total_size = stride * 14; // 14 buffers total
 
-            size_t total_size = size_pos + size_vel + size_color + size_scale + size_life + size_norm_life;
+            buffer.assign(total_size, 0.0f);
+            float* data = buffer.data();
 
-            // Reallocate the entire buffer. 
-            buffer.clear();
-            buffer.resize(total_size);
+            pos_x = data + (stride * 0);
+            pos_y = data + (stride * 1);
+            pos_z = data + (stride * 2);
 
-            // Assign pointers to the correct offsets within the single buffer
-            uint8_t* data_ptr = buffer.data();
-            positions = reinterpret_cast<math::Vector3*>(data_ptr);
-            velocities = reinterpret_cast<math::Vector3*>(data_ptr + size_pos);
-            colors = reinterpret_cast<Color*>(data_ptr + size_pos + size_vel);
-            scales = reinterpret_cast<math::Vector2*>(data_ptr + size_pos + size_vel + size_color);
-            inv_lifetimes = reinterpret_cast<float*>(data_ptr + size_pos + size_vel + size_color + size_scale);
-            normalized_lifetimes = reinterpret_cast<float*>(data_ptr + size_pos + size_vel + size_color + size_scale + size_life);
+            vel_x = data + (stride * 3);
+            vel_y = data + (stride * 4);
+            vel_z = data + (stride * 5);
 
-            // Optional: Zero out the memory if you want a truly clean slate
-            memset(buffer.data(), 0, total_size);
+            col_r = data + (stride * 6);
+            col_g = data + (stride * 7);
+            col_b = data + (stride * 8);
+            col_a = data + (stride * 9);
+
+            scale_x = data + (stride * 10);
+            scale_y = data + (stride * 11);
+
+            inv_lifetimes = data + (stride * 12);
+            normalized_lifetimes = data + (stride * 13);
         }
 
-        int32_t GetLastAliveIndex() const
-        {
-            return alive_particle_count - 1;
-        }
+        int32_t GetLastAliveIndex() const { return static_cast<int32_t>(alive_particle_count) - 1; }
     };
 }
