@@ -147,9 +147,9 @@ namespace spartan
         // Color
         ColorMode color_mode = ColorMode::Constant;
         Color     color_constant = Color::standard_white;
-        Color     color_start = Color::standard_white; // LerpConstant start
-        Color     color_min = Color::standard_white;
-        Color     color_max = Color::standard_red;
+        Color     color_min = Color(0.0f, 1.0f, 0.0f, 1.0f);
+        Color     color_max = Color(0.0f, 60/255.0f, 1.0f, 1.0f);
+        Color     color_start = Color(1.0f, 146/255.0f, 0.0f, 1.0f); // LerpConstant start
         Color     color_end = Color::standard_red;   // lerp target at death
 
         // Physics

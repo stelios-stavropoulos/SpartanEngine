@@ -568,16 +568,14 @@ namespace spartan
 
         SP_PROFILE_CPU_END()
 
-            // ---- Spawn ----
-            SP_PROFILE_CPU_START("CPU Particles Spawn")
+        // ---- Spawn ----
+        SP_PROFILE_CPU_START("CPU Particles Spawn")
 
-            spawn_accumulator += dt * spawn_rate;
-
+        spawn_accumulator += dt * spawn_rate;
         uint32_t spawn_count = static_cast<uint32_t>(spawn_accumulator);
-        spawn_accumulator -= static_cast<float>(spawn_count);
-
         const uint32_t available = particle_data.max_particle_count - particle_data.alive_particle_count;
         spawn_count = std::min(spawn_count, available);
+        spawn_accumulator -= static_cast<float>(spawn_count);
 
         if (spawn_count > 0)
         {

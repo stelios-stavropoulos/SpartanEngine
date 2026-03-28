@@ -2438,29 +2438,38 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
     if (!component_begin("Particle System", design::accent_particle_system_CPU(), particle_system_CPU))
         return;
 
+    // Helper lambda or inline initialization
+    auto add_picker = [&](auto& vector, const char* label, const spartan::Color& color) {
+        auto picker = std::make_unique<ButtonColorPicker>(label);
+        picker->SetColor(color);
+        vector.emplace_back(std::move(picker));
+        };
+
     if (ImGui::Button("Add Emitter", ImVec2(-1, 0)))
     {
         Renderable* renderable = particle_system_CPU->GetEntity()->AddComponent<Renderable>();
         Emitter* emitter = new Emitter(renderable);
         particle_system_CPU->emitters.push_back(emitter);
 
-        // allocate color pickers for the new emitter
-        m_colorPickers_particle_const.emplace_back(std::make_unique<ButtonColorPicker>("Const Color##cp_const"));
-        m_colorPickers_particle_start.emplace_back(std::make_unique<ButtonColorPicker>("Start Color##cp_start"));
-        m_colorPickers_particle_end.emplace_back(std::make_unique<ButtonColorPicker>("End Color##cp_end"));
-        m_colorPickers_particle_min.emplace_back(std::make_unique<ButtonColorPicker>("Min Color##cp_min"));
-        m_colorPickers_particle_max.emplace_back(std::make_unique<ButtonColorPicker>("Max Color##cp_max"));
+        add_picker(m_colorPickers_particle_const, "Const Color##cp_const", emitter->color_constant);
+        add_picker(m_colorPickers_particle_start, "Start Color##cp_start", emitter->color_start);
+        add_picker(m_colorPickers_particle_end, "End Color##cp_end", emitter->color_end);
+        add_picker(m_colorPickers_particle_min, "Min Color##cp_min", emitter->color_min);
+        add_picker(m_colorPickers_particle_max, "Max Color##cp_max", emitter->color_max);
     }
 
     // keep picker arrays in sync if emitters were added externally
     const size_t emitter_count = particle_system_CPU->emitters.size();
     while (m_colorPickers_particle_start.size() < emitter_count)
     {
-        m_colorPickers_particle_const.emplace_back(std::make_unique<ButtonColorPicker>("Const Color##cp_const"));
-        m_colorPickers_particle_start.emplace_back(std::make_unique<ButtonColorPicker>("Start Color##cp_start"));
-        m_colorPickers_particle_end.emplace_back(std::make_unique<ButtonColorPicker>("End Color##cp_end"));
-        m_colorPickers_particle_min.emplace_back(std::make_unique<ButtonColorPicker>("Min Color##cp_min"));
-        m_colorPickers_particle_max.emplace_back(std::make_unique<ButtonColorPicker>("Max Color##cp_max"));
+        size_t i = m_colorPickers_particle_start.size();
+        Emitter* emitter = particle_system_CPU->emitters[i];
+
+        add_picker(m_colorPickers_particle_const, "Const Color##cp_const", emitter->color_constant);
+        add_picker(m_colorPickers_particle_start, "Start Color##cp_start", emitter->color_start);
+        add_picker(m_colorPickers_particle_end, "End Color##cp_end", emitter->color_end);
+        add_picker(m_colorPickers_particle_min, "Min Color##cp_min", emitter->color_min);
+        add_picker(m_colorPickers_particle_max, "Max Color##cp_max", emitter->color_max);
     }
 
     for (uint32_t idx = 0; idx < static_cast<uint32_t>(emitter_count); idx++)
@@ -2659,8 +2668,8 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
         if (color_mode == Emitter::ColorMode::RandomRange)
         {
             // Use the index 'idx' to make the label string unique to ImGui
-            std::string min_label = "Min Color##min" + std::to_string(idx);
-            std::string max_label = "Max Color##max" + std::to_string(idx);
+            std::string min_label = "Min Color" + std::to_string(idx);
+            std::string max_label = "Max Color" + std::to_string(idx);
 
             ImGui::PushID("particle_min_color");
             property_color(min_label.c_str(), m_colorPickers_particle_min[idx].get(), "minimum spawn color");
@@ -2675,8 +2684,8 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
         else if (color_mode == Emitter::ColorMode::LerpConstant)
         {
             // Use the index 'idx' to make the label string unique to ImGui
-            std::string start_label = "Start Color##min" + std::to_string(idx);
-            std::string end_label = "End Color##max" + std::to_string(idx);
+            std::string start_label = "Start Color" + std::to_string(idx);
+            std::string end_label = "End Color" + std::to_string(idx);
 
             ImGui::PushID("particle_start_color");
             property_color(start_label.c_str(), m_colorPickers_particle_start[idx].get(), "color at birth");
@@ -2691,9 +2700,9 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
         else if (color_mode == Emitter::ColorMode::LerpRandomRange)
         {
             // Use the index 'idx' to make the label string unique to ImGui
-            std::string min_start_label = "Min Start Color##min" + std::to_string(idx);
-            std::string end_start_label = "End Start Color##max" + std::to_string(idx);
-            std::string end_label       = "End Color##max"       + std::to_string(idx);
+            std::string min_start_label = "Min Start Color" + std::to_string(idx);
+            std::string end_start_label = "End Start Color" + std::to_string(idx);
+            std::string end_label       = "End Color"       + std::to_string(idx);
 
             ImGui::PushID("particle_min_start_color");
             property_color(min_start_label.c_str(), m_colorPickers_particle_min[idx].get(), "minimum spawn color");
