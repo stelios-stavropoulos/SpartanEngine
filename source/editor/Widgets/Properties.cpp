@@ -75,6 +75,12 @@ namespace
     std::unique_ptr<ButtonColorPicker> m_colorPicker_particle_start;
     std::unique_ptr<ButtonColorPicker> m_colorPicker_particle_end;
 
+    std::vector<std::unique_ptr<ButtonColorPicker>> m_colorPickers_particle_const;
+    std::vector<std::unique_ptr<ButtonColorPicker>> m_colorPickers_particle_start;
+    std::vector<std::unique_ptr<ButtonColorPicker>> m_colorPickers_particle_end;
+    std::vector<std::unique_ptr<ButtonColorPicker>> m_colorPickers_particle_min;
+    std::vector<std::unique_ptr<ButtonColorPicker>> m_colorPickers_particle_max;
+
     // context menu state
     string context_menu_id;
     Component* copied_component = nullptr;
@@ -606,8 +612,8 @@ Properties::Properties(Editor* editor) : Widget(editor)
     m_colorPicker_light          = make_unique<ButtonColorPicker>("Light Color Picker");
     m_material_color_picker      = make_unique<ButtonColorPicker>("Material Color Picker");
     m_colorPicker_camera         = make_unique<ButtonColorPicker>("Camera Color Picker");
-    m_colorPicker_particle_start = make_unique<ButtonColorPicker>("Particle Start Color");
-    m_colorPicker_particle_end   = make_unique<ButtonColorPicker>("Particle End Color");
+    m_colorPicker_particle_start = make_unique<ButtonColorPicker>("Particle Start Color1");
+    m_colorPicker_particle_end   = make_unique<ButtonColorPicker>("Particle End Color1");
 
     file_selection::initialize(editor);
 }
@@ -2432,249 +2438,336 @@ void Properties::ShowParticleSystemCPU(spartan::ParticleSystemCPU* particle_syst
     if (!component_begin("Particle System", design::accent_particle_system_CPU(), particle_system_CPU))
         return;
 
-    ImGui::Separator();
-    /*
-    for (size_t i = 0; i < particle_system_CPU->emitters.size();)
-    {
-        Emitter* emitter = particle_system_CPU->emitters[i];
-
-        ImGui::PushID(emitter);
-
-        // =========================
-        // Emitter Header
-        // =========================
-        char name_buffer[256]{};
-        strncpy_s(name_buffer, emitter->name.c_str(), sizeof(name_buffer) - 1);
-
-        bool emitter_open = ImGui::TreeNodeEx(
-            "##Emitter",
-            ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen
-        );
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 30.0f);
-        if (ImGui::InputText("##EmitterName", name_buffer, sizeof(name_buffer)))
-        {
-            emitter->name = name_buffer;
-        }
-
-        float button_width = 20.0f;
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - button_width);
-        if (ImGui::Button("X"))
-        {
-            delete emitter;
-            particle_system_CPU->emitters.erase(
-                particle_system_CPU->emitters.begin() + i
-            );
-
-            ImGui::PopID();
-            ImGui::TreePop();
-            ImGui::Separator();
-            continue; // DO NOT increment i
-        }
-
-        if (!emitter_open)
-        {
-            ImGui::PopID();
-            continue;
-        }
-
-        ImGui::Checkbox("Enabled", &emitter->enabled);
-
-        ImGui::DragFloat("Spawn Rate", &emitter->spawn_rate, 0.1f, 0.0f, 30000.0f, "%.1f/s");
-        if (ImGui::IsItemDeactivatedAfterEdit())
-        {
-            emitter->ChangeSpawnRate(emitter->spawn_rate);
-        }
-
-        // ======================================================
-        // Initialization Modules
-        // ======================================================
-        ImGui::PushID("InitModules");
-
-        bool open_init_popup = false;
-        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-        bool init_open = ImGui::CollapsingHeader("Initialization Modules", ImGuiTreeNodeFlags_AllowOverlap);
-
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 90.0f);
-        if (ImGui::Button("+ Add Module"))
-        {
-            ImGui::OpenPopup("AddInitModule");
-        }
-
-        if (ImGui::BeginPopup("AddInitModule"))
-        {
-            for (const auto& name : EmitterViewer::GetAvailableInitializationModules())
-            {
-                if (ImGui::Selectable(name.c_str()))
-                {
-                    EmitterModuleType type = EmitterViewer::StringToType(name);
-
-                    EmitterModule* module = nullptr;
-
-                    switch (type)
-                    {
-                    case EmitterModuleType::SphereShape:
-                        module = new EM_SphereShape();
-                        break;
-                    case EmitterModuleType::SetLifetime:
-                        module = new EM_SetLifetime();
-                        break;
-                    case EmitterModuleType::AddVelocity:
-                        module = new EM_AddVelocity();
-                        break;
-                    case EmitterModuleType::SetColor:
-                        module = new EM_SetColor();
-                        break;
-                    case EmitterModuleType::SetScale:
-                        module = new EM_SetScale();
-                        break;
-                    default:
-                        assert(false && "Module not yet implemented!");
-                        break;
-                    }
-                    if (module)
-                        emitter->initialization_modules.push_back(module);
-                }
-            }
-            ImGui::EndPopup();
-        }
-
-        if (init_open)
-        {
-            for (auto it = emitter->initialization_modules.begin(); it != emitter->initialization_modules.end();)
-            {
-                EmitterModule* mod = *it;
-                ImGui::PushID(mod);
-
-                bool mod_open = ImGui::TreeNodeEx(
-                    EmitterViewer::TypeToString(mod->GetType()).c_str(),
-                    ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen
-                );
-
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 25.0f);
-                if (ImGui::Button("x"))
-                {
-                    delete mod;
-                    it = emitter->initialization_modules.erase(it);
-                    ImGui::PopID();
-                    if (mod_open) ImGui::TreePop();
-                    continue;
-                }
-
-                if (mod_open)
-                {
-                    EmitterViewer::ShowEmitter(mod);
-                    ImGui::TreePop();
-                }
-
-                ImGui::PopID();
-                ++it;
-            }
-        }
-
-        ImGui::PopID(); // InitModules
-
-        // ======================================================
-        // Update Modules
-        // ======================================================
-        ImGui::PushID("UpdateModules");
-
-        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-        bool update_open = ImGui::CollapsingHeader("Update Modules", ImGuiTreeNodeFlags_AllowOverlap);
-
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 90.0f);
-        if (ImGui::Button("+ Add Module"))
-        {
-            ImGui::OpenPopup("AddUpdateModule");
-        }
-
-        if (ImGui::BeginPopup("AddUpdateModule"))
-        {
-            for (const auto& name : EmitterViewer::GetAvailableUpdateModules())
-            {
-                if (ImGui::Selectable(name.c_str()))
-                {
-                    EmitterModuleType type = EmitterViewer::StringToType(name);
-
-                    EmitterModule* module = nullptr;
-
-                    switch (type)
-                    {
-                    case EmitterModuleType::Gravity:
-                        module = new EM_Gravity();
-                        break;
-                    case EmitterModuleType::AddVelocity:
-                        module = new EM_AddVelocity();
-                        break;
-                    case EmitterModuleType::ApplyVelocity:
-                        module = new EM_ApplyVelocity();
-                        break;
-                    case EmitterModuleType::SetColor:
-                        module = new EM_SetColor();
-                        break;
-                    case EmitterModuleType::SetScale:
-                        module = new EM_SetScale();
-                        break;
-                    default:
-                        assert(false && "Module not yet implemented!");
-                        break;
-                    }
-                    if (module)
-                        emitter->update_modules.push_back(module);
-                }
-            }
-            ImGui::EndPopup();
-        }
-
-        if (update_open)
-        {
-            for (auto it = emitter->update_modules.begin(); it != emitter->update_modules.end();)
-            {
-                EmitterModule* mod = *it;
-                ImGui::PushID(mod);
-
-                bool mod_open = ImGui::TreeNodeEx(
-                    EmitterViewer::TypeToString(mod->GetType()).c_str(),
-                    ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen
-                );
-
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 25.0f);
-                if (ImGui::Button("x"))
-                {
-                    delete mod;
-                    it = emitter->update_modules.erase(it);
-                    ImGui::PopID();
-                    if (mod_open) ImGui::TreePop();
-                    continue;
-                }
-
-                if (mod_open)
-                {
-                    EmitterViewer::ShowEmitter(mod);
-                    ImGui::TreePop();
-                }
-
-                ImGui::PopID();
-                ++it;
-            }
-        }
-
-        ImGui::PopID(); // UpdateModules
-
-        ImGui::TreePop(); // Emitter
-        ImGui::Separator();
-        ImGui::PopID(); // emitter
-
-        ++i;
-    }
-    */
     if (ImGui::Button("Add Emitter", ImVec2(-1, 0)))
     {
         Renderable* renderable = particle_system_CPU->GetEntity()->AddComponent<Renderable>();
-        //Emitter* emitter = new Emitter(particle_system_CPU->GetEntity()->GetComponent<Renderable>());
         Emitter* emitter = new Emitter(renderable);
         particle_system_CPU->emitters.push_back(emitter);
+
+        // allocate color pickers for the new emitter
+        m_colorPickers_particle_const.emplace_back(std::make_unique<ButtonColorPicker>("Const Color##cp_const"));
+        m_colorPickers_particle_start.emplace_back(std::make_unique<ButtonColorPicker>("Start Color##cp_start"));
+        m_colorPickers_particle_end.emplace_back(std::make_unique<ButtonColorPicker>("End Color##cp_end"));
+        m_colorPickers_particle_min.emplace_back(std::make_unique<ButtonColorPicker>("Min Color##cp_min"));
+        m_colorPickers_particle_max.emplace_back(std::make_unique<ButtonColorPicker>("Max Color##cp_max"));
+    }
+
+    // keep picker arrays in sync if emitters were added externally
+    const size_t emitter_count = particle_system_CPU->emitters.size();
+    while (m_colorPickers_particle_start.size() < emitter_count)
+    {
+        m_colorPickers_particle_const.emplace_back(std::make_unique<ButtonColorPicker>("Const Color##cp_const"));
+        m_colorPickers_particle_start.emplace_back(std::make_unique<ButtonColorPicker>("Start Color##cp_start"));
+        m_colorPickers_particle_end.emplace_back(std::make_unique<ButtonColorPicker>("End Color##cp_end"));
+        m_colorPickers_particle_min.emplace_back(std::make_unique<ButtonColorPicker>("Min Color##cp_min"));
+        m_colorPickers_particle_max.emplace_back(std::make_unique<ButtonColorPicker>("Max Color##cp_max"));
+    }
+
+    for (uint32_t idx = 0; idx < static_cast<uint32_t>(emitter_count); idx++)
+    {
+        Emitter* emitter = particle_system_CPU->emitters[idx];
+        if (!emitter)
+            continue;
+
+
+
+        ImGui::Separator();
+
+        const std::string header_label = "Emitter " + std::to_string(idx);
+        if (!ImGui::CollapsingHeader(header_label.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+            continue;
+
+        ImGui::PushID(idx);
+
+        //= REFLECT ============================================================
+        float         spawn_rate = emitter->spawn_rate;
+        float         sphere_radius = emitter->sphere_radius;
+
+        Emitter::LifetimeMode lifetime_mode = emitter->lifetime_mode;
+        float         lifetime_constant = emitter->lifetime_constant;
+        float         lifetime_min = emitter->lifetime_min;
+        float         lifetime_max = emitter->lifetime_max;
+
+        Emitter::VelocityMode  velocity_mode = emitter->velocity_mode;
+        math::Vector3 initial_velocity = emitter->initial_velocity;
+        math::Vector3 velocity_min = emitter->velocity_min;
+        math::Vector3 velocity_max = emitter->velocity_max;
+        float         velocity_scale = emitter->velocity_scale;
+        float         velocity_scale_min = emitter->velocity_scale_min;
+        float         velocity_scale_max = emitter->velocity_scale_max;
+
+        Emitter::ScaleMode     scale_mode = emitter->scale_mode;
+        math::Vector2 scale_constant = emitter->scale_constant;
+        math::Vector2 scale_start = emitter->scale_start;
+        math::Vector2 scale_min = emitter->scale_min;
+        math::Vector2 scale_max = emitter->scale_max;
+        math::Vector2 scale_end = emitter->scale_end;
+
+        Emitter::ColorMode     color_mode = emitter->color_mode;
+        Color         color_constant = emitter->color_constant;
+        Color         color_start = emitter->color_start;
+        Color         color_min = emitter->color_min;
+        Color         color_max = emitter->color_max;
+        Color         color_end = emitter->color_end;
+
+        math::Vector3 gravity = emitter->gravity;
+        float         damping = emitter->damping;
+        //======================================================================
+
+        // ---- Spawn -----------------------------------------------------------
+        layout::section_header("Spawn");
+        layout::begin_property("Spawn Rate", "particles spawned per second");
+        ImGui::DragFloat("##spawn_rate", &spawn_rate, 10.0f, 0.0f, 100000.0f, "%.0f");
+        layout::begin_property("Sphere Radius", "spawn volume radius");
+        ImGui::DragFloat("##sphere_radius", &sphere_radius, 0.1f, 0.0f, 1000.0f, "%.2f");
+
+        // ---- Lifetime --------------------------------------------------------
+        layout::separator();
+        layout::section_header("Lifetime");
+        {
+            const char* lifetime_mode_names[] =
+            {
+                "Constant",
+                "Random Range"
+            };
+            int lm_index = static_cast<int>(lifetime_mode);
+            layout::begin_property("Mode", "how initial lifetime is assigned");
+            if (ImGui::Combo("##lifetime_mode", &lm_index, lifetime_mode_names, IM_ARRAYSIZE(lifetime_mode_names)))
+                lifetime_mode = static_cast<Emitter::LifetimeMode>(lm_index);
+        }
+        if (lifetime_mode == Emitter::LifetimeMode::Constant)
+        {
+            layout::begin_property("Duration", "seconds before particle dies");
+            ImGui::DragFloat("##lifetime_constant", &lifetime_constant, 0.05f, 0.01f, 60.0f, "%.2fs");
+        }
+        else if (lifetime_mode == Emitter::LifetimeMode::RandomRange)
+        {
+            layout::begin_property("Min", "minimum particle lifetime");
+            ImGui::DragFloat("##lifetime_min", &lifetime_min, 0.05f, 0.01f, 60.0f, "%.2fs");
+            layout::begin_property("Max", "maximum particle lifetime");
+            ImGui::DragFloat("##lifetime_max", &lifetime_max, 0.05f, lifetime_min, 60.0f, "%.2fs");
+        }
+
+        // ---- Velocity --------------------------------------------------------
+        layout::separator();
+        layout::section_header("Velocity");
+        {
+            const char* velocity_mode_names[] =
+            {
+                "None",
+                "Constant",
+                "Random Range",
+                "Outward Constant",
+                "Outward Random Range"
+            };
+            int vm_index = static_cast<int>(velocity_mode);
+            layout::begin_property("Mode", "how initial velocity is assigned");
+            if (ImGui::Combo("##velocity_mode", &vm_index, velocity_mode_names, IM_ARRAYSIZE(velocity_mode_names)))
+                velocity_mode = static_cast<Emitter::VelocityMode>(vm_index);
+        }
+        if (velocity_mode == Emitter::VelocityMode::Constant)
+        {
+            layout::begin_property("Velocity", "initial velocity xyz");
+            ImGui::DragFloat3("##initial_velocity", &initial_velocity.x, 0.1f, -1000.0f, 1000.0f, "%.2f");
+        }
+        else if (velocity_mode == Emitter::VelocityMode::RandomRange)
+        {
+            layout::begin_property("Min", "minimum velocity xyz");
+            ImGui::DragFloat3("##velocity_min", &velocity_min.x, 0.1f, -1000.0f, 1000.0f, "%.2f");
+            layout::begin_property("Max", "maximum velocity xyz");
+            ImGui::DragFloat3("##velocity_max", &velocity_max.x, 0.1f, -1000.0f, 1000.0f, "%.2f");
+        }
+        else if (velocity_mode == Emitter::VelocityMode::OutwardConstant)
+        {
+            layout::begin_property("Speed", "outward speed");
+            ImGui::DragFloat("##velocity_scale", &velocity_scale, 0.1f, 0.0f, 1000.0f, "%.2f");
+        }
+        else if (velocity_mode == Emitter::VelocityMode::OutwardRandomRange)
+        {
+            layout::begin_property("Min Speed", "minimum outward speed");
+            ImGui::DragFloat("##velocity_scale_min", &velocity_scale_min, 0.1f, 0.0f, 1000.0f, "%.2f");
+            layout::begin_property("Max Speed", "maximum outward speed");
+            ImGui::DragFloat("##velocity_scale_max", &velocity_scale_max, 0.1f, velocity_scale_min, 1000.0f, "%.2f");
+        }
+
+        // ---- Scale -----------------------------------------------------------
+        layout::separator();
+        layout::section_header("Scale");
+        {
+            const char* scale_mode_names[] =
+            {
+                "Constant",
+                "Random Range",
+                "Lerp Constant",
+                "Lerp Random Range"
+            };
+            int sm_index = static_cast<int>(scale_mode);
+            layout::begin_property("Mode", "how scale is assigned and animated");
+            if (ImGui::Combo("##scale_mode", &sm_index, scale_mode_names, IM_ARRAYSIZE(scale_mode_names)))
+                scale_mode = static_cast<Emitter::ScaleMode>(sm_index);
+        }
+        if (scale_mode == Emitter::ScaleMode::Constant)
+        {
+            layout::begin_property("Scale", "uniform scale xy");
+            ImGui::DragFloat2("##scale_constant", &scale_constant.x, 0.01f, 0.0f, 100.0f, "%.2f");
+        }
+        else if (scale_mode == Emitter::ScaleMode::RandomRange)
+        {
+            layout::begin_property("Min", "minimum scale xy");
+            ImGui::DragFloat2("##scale_min", &scale_min.x, 0.01f, 0.0f, 100.0f, "%.2f");
+            layout::begin_property("Max", "maximum scale xy");
+            ImGui::DragFloat2("##scale_max", &scale_max.x, 0.01f, 0.0f, 100.0f, "%.2f");
+        }
+        else if (scale_mode == Emitter::ScaleMode::LerpConstant)
+        {
+            layout::begin_property("Start", "scale at birth");
+            ImGui::DragFloat2("##scale_start", &scale_start.x, 0.01f, 0.0f, 100.0f, "%.2f");
+            layout::begin_property("End", "scale at death");
+            ImGui::DragFloat2("##scale_end", &scale_end.x, 0.01f, 0.0f, 100.0f, "%.2f");
+        }
+        else if (scale_mode == Emitter::ScaleMode::LerpRandomRange)
+        {
+            layout::begin_property("Min", "minimum spawn scale xy");
+            ImGui::DragFloat2("##scale_min", &scale_min.x, 0.01f, 0.0f, 100.0f, "%.2f");
+            layout::begin_property("Max", "maximum spawn scale xy");
+            ImGui::DragFloat2("##scale_max", &scale_max.x, 0.01f, 0.0f, 100.0f, "%.2f");
+            layout::begin_property("End", "scale at death");
+            ImGui::DragFloat2("##scale_end", &scale_end.x, 0.01f, 0.0f, 100.0f, "%.2f");
+        }
+
+        // ---- Color -----------------------------------------------------------
+        layout::separator();
+        layout::section_header("Color");
+        {
+            const char* color_mode_names[] =
+            {
+                "Constant",
+                "Random Range",
+                "Lerp Constant",
+                "Lerp Random Range"
+            };
+            int cm_index = static_cast<int>(color_mode);
+            layout::begin_property("Mode", "how color is assigned and animated");
+            if (ImGui::Combo("##color_mode", &cm_index, color_mode_names, IM_ARRAYSIZE(color_mode_names)))
+                color_mode = static_cast<Emitter::ColorMode>(cm_index);
+        }
+        if (color_mode == Emitter::ColorMode::Constant)
+        {
+            property_color("Color", m_colorPickers_particle_const[idx].get(), "particle color");
+            color_constant = m_colorPickers_particle_const[idx]->GetColor();
+        }
+        if (color_mode == Emitter::ColorMode::RandomRange)
+        {
+            // Use the index 'idx' to make the label string unique to ImGui
+            std::string min_label = "Min Color##min" + std::to_string(idx);
+            std::string max_label = "Max Color##max" + std::to_string(idx);
+
+            ImGui::PushID("particle_min_color");
+            property_color(min_label.c_str(), m_colorPickers_particle_min[idx].get(), "minimum spawn color");
+            color_min = m_colorPickers_particle_min[idx]->GetColor();
+            ImGui::PopID();
+
+            ImGui::PushID("particle_max_color");
+            property_color(max_label.c_str(), m_colorPickers_particle_max[idx].get(), "maximum spawn color");
+            color_max = m_colorPickers_particle_max[idx]->GetColor();
+            ImGui::PopID();
+        }
+        else if (color_mode == Emitter::ColorMode::LerpConstant)
+        {
+            // Use the index 'idx' to make the label string unique to ImGui
+            std::string start_label = "Start Color##min" + std::to_string(idx);
+            std::string end_label = "End Color##max" + std::to_string(idx);
+
+            ImGui::PushID("particle_start_color");
+            property_color(start_label.c_str(), m_colorPickers_particle_start[idx].get(), "color at birth");
+            color_start = m_colorPickers_particle_start[idx]->GetColor();
+            ImGui::PopID();
+
+            ImGui::PushID("particle_end_color");
+            property_color(end_label.c_str(), m_colorPickers_particle_end[idx].get(), "color at death");
+            color_end = m_colorPickers_particle_end[idx]->GetColor();
+            ImGui::PopID();
+        }
+        else if (color_mode == Emitter::ColorMode::LerpRandomRange)
+        {
+            // Use the index 'idx' to make the label string unique to ImGui
+            std::string min_start_label = "Min Start Color##min" + std::to_string(idx);
+            std::string end_start_label = "End Start Color##max" + std::to_string(idx);
+            std::string end_label       = "End Color##max"       + std::to_string(idx);
+
+            ImGui::PushID("particle_min_start_color");
+            property_color(min_start_label.c_str(), m_colorPickers_particle_min[idx].get(), "minimum spawn color");
+            color_min = m_colorPickers_particle_min[idx]->GetColor();
+            ImGui::PopID();
+
+            ImGui::PushID("particle_max_start_color");
+            property_color(end_start_label.c_str(), m_colorPickers_particle_max[idx].get(), "maximum spawn color");
+            color_max = m_colorPickers_particle_max[idx]->GetColor();
+            ImGui::PopID();
+
+            ImGui::PushID("particle_end_color");
+            property_color(end_label.c_str(), m_colorPickers_particle_end[idx].get(), "color at death");
+            color_end = m_colorPickers_particle_end[idx]->GetColor();
+            ImGui::PopID();
+        }
+
+        // ---- Physics ---------------------------------------------------------
+        layout::separator();
+        layout::section_header("Physics");
+        layout::begin_property("Gravity", "gravity force xyz");
+        ImGui::DragFloat3("##gravity", &gravity.x, 0.01f, -100.0f, 100.0f, "%.2f");
+        layout::begin_property("Damping", "velocity damping per second");
+        ImGui::SliderFloat("##damping", &damping, 0.0f, 1.0f, "%.3f");
+
+        // ---- Stats -----------------------------------------------------------
+        layout::separator();
+        layout::section_header("Stats");
+        layout::begin_property("Alive", "currently alive particles");
+        ImGui::Text("%u / %u", emitter->particle_data.alive_particle_count, emitter->particle_data.max_particle_count);
+
+        //= MAP ================================================================
+        const bool needs_respawn =
+            spawn_rate != emitter->spawn_rate ||
+            lifetime_mode != emitter->lifetime_mode ||
+            lifetime_constant != emitter->lifetime_constant ||
+            lifetime_max != emitter->lifetime_max ||
+            scale_mode != emitter->scale_mode ||
+            color_mode != emitter->color_mode ||
+            velocity_mode != emitter->velocity_mode;
+
+        emitter->spawn_rate = spawn_rate;
+        emitter->sphere_radius = sphere_radius;
+        emitter->lifetime_mode = lifetime_mode;
+        emitter->lifetime_constant = lifetime_constant;
+        emitter->lifetime_min = lifetime_min;
+        emitter->lifetime_max = lifetime_max;
+        emitter->velocity_mode = velocity_mode;
+        emitter->initial_velocity = initial_velocity;
+        emitter->velocity_min = velocity_min;
+        emitter->velocity_max = velocity_max;
+        emitter->velocity_scale = velocity_scale;
+        emitter->velocity_scale_min = velocity_scale_min;
+        emitter->velocity_scale_max = velocity_scale_max;
+        emitter->scale_mode = scale_mode;
+        emitter->scale_constant = scale_constant;
+        emitter->scale_start = scale_start;
+        emitter->scale_min = scale_min;
+        emitter->scale_max = scale_max;
+        emitter->scale_end = scale_end;
+        emitter->color_mode = color_mode;
+        emitter->color_constant = color_constant;
+        emitter->color_start = color_start;
+        emitter->color_min = color_min;
+        emitter->color_max = color_max;
+        emitter->color_end = color_end;
+        emitter->gravity = gravity;
+        emitter->damping = damping;
+
+        if (needs_respawn)
+            emitter->ChangeSpawnRate(spawn_rate);
+        //======================================================================
+
+        ImGui::PopID();
     }
 
     component_end();

@@ -67,76 +67,79 @@ namespace spartan
 
     struct ParticleData
     {
-        uint32_t max_particle_count = 0;
-        uint32_t alive_particle_count = 0;
+        uint32_t max_particle_count    = 0;
+        uint32_t alive_particle_count  = 0;
 
-        // Position
-        float* pos_x = nullptr;
-        float* pos_y = nullptr;
-        float* pos_z = nullptr;
-
-        // Velocity
-        float* vel_x = nullptr;
-        float* vel_y = nullptr;
-        float* vel_z = nullptr;
-
-        // Color (RGBA)
-        float* col_r = nullptr;
-        float* col_g = nullptr;
-        float* col_b = nullptr;
-        float* col_a = nullptr;
-
-        // Scale
-        float* scale_x = nullptr;
-        float* scale_y = nullptr;
-
-        // Life
-        float* inv_lifetimes = nullptr;
+        float* pos_x              = nullptr;
+        float* pos_y              = nullptr;
+        float* pos_z              = nullptr;
+        float* vel_x              = nullptr;
+        float* vel_y              = nullptr;
+        float* vel_z              = nullptr;
+        float* col_r              = nullptr;
+        float* col_g              = nullptr;
+        float* col_b              = nullptr;
+        float* col_a              = nullptr;
+        float* scale_x            = nullptr;
+        float* scale_y            = nullptr;
+        float* inv_lifetimes      = nullptr;
         float* normalized_lifetimes = nullptr;
+
+        // Per-particle spawn values for lerping — only allocated when needed
+        float* spawn_col_r        = nullptr; // color at birth
+        float* spawn_col_g        = nullptr;
+        float* spawn_col_b        = nullptr;
+        float* spawn_col_a        = nullptr;
+        float* spawn_scale_x      = nullptr; // scale at birth
+        float* spawn_scale_y      = nullptr;
 
     private:
         std::vector<float, AlignedAllocator<float, 32>> buffer;
+        bool has_color_lerp = false;
+        bool has_scale_lerp = false;
 
     public:
-        ParticleData() = default;
-        ~ParticleData() { buffer.clear(); }
-
-        explicit ParticleData(uint32_t count) { Resize(count); }
-
-        void Resize(uint32_t new_max_count)
+        void Resize(uint32_t count, bool color_lerp, bool scale_lerp)
         {
+            has_color_lerp = color_lerp;
+            has_scale_lerp = scale_lerp;
 
-            max_particle_count = new_max_count;
-            alive_particle_count = 0;
+            max_particle_count    = count;
+            alive_particle_count  = 0;
 
-            // 14 total float streams (3 pos, 3 vel, 4 col, 2 scale, 2 life)
-            // We align each stream to 32 bytes (8 floats) for AVX compatibility
-            size_t stride = (new_max_count + 7) & ~7;
-            size_t total_size = stride * 14; // 14 buffers total
+            size_t stride     = (count + 7) & ~7u;
+            size_t num_streams = 14;
+            if (color_lerp) num_streams += 4; // spawn_col rgba
+            if (scale_lerp) num_streams += 2; // spawn_scale xy
 
-            buffer.assign(total_size, 0.0f);
-            float* data = buffer.data();
+            buffer.assign(stride * num_streams, 0.0f);
+            float* d = buffer.data();
+            size_t s = 0;
 
-            pos_x = data + (stride * 0);
-            pos_y = data + (stride * 1);
-            pos_z = data + (stride * 2);
+            pos_x               = d + stride * s++;
+            pos_y               = d + stride * s++;
+            pos_z               = d + stride * s++;
+            vel_x               = d + stride * s++;
+            vel_y               = d + stride * s++;
+            vel_z               = d + stride * s++;
+            col_r               = d + stride * s++;
+            col_g               = d + stride * s++;
+            col_b               = d + stride * s++;
+            col_a               = d + stride * s++;
+            scale_x             = d + stride * s++;
+            scale_y             = d + stride * s++;
+            inv_lifetimes       = d + stride * s++;
+            normalized_lifetimes = d + stride * s++;
 
-            vel_x = data + (stride * 3);
-            vel_y = data + (stride * 4);
-            vel_z = data + (stride * 5);
+            spawn_col_r = color_lerp ? d + stride * s++ : nullptr;
+            spawn_col_g = color_lerp ? d + stride * s++ : nullptr;
+            spawn_col_b = color_lerp ? d + stride * s++ : nullptr;
+            spawn_col_a = color_lerp ? d + stride * s++ : nullptr;
 
-            col_r = data + (stride * 6);
-            col_g = data + (stride * 7);
-            col_b = data + (stride * 8);
-            col_a = data + (stride * 9);
-
-            scale_x = data + (stride * 10);
-            scale_y = data + (stride * 11);
-
-            inv_lifetimes = data + (stride * 12);
-            normalized_lifetimes = data + (stride * 13);
+            spawn_scale_x = scale_lerp ? d + stride * s++ : nullptr;
+            spawn_scale_y = scale_lerp ? d + stride * s   : nullptr;
         }
 
-        int32_t GetLastAliveIndex() const { return static_cast<int32_t>(alive_particle_count) - 1; }
+        int32_t GetLastAliveIndex() const { return (int32_t)alive_particle_count - 1; }
     };
 }
