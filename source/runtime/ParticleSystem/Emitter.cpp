@@ -464,7 +464,7 @@ namespace spartan
 
         const float max_lifetime = (lifetime_mode == LifetimeMode::RandomRange)
             ? lifetime_max : lifetime_constant;
-        const uint32_t capacity = static_cast<uint32_t>(std::ceil(spawn_rate * max_lifetime)) + 1;
+        const uint32_t capacity = static_cast<uint32_t>(std::ceil(spawn_rate * max_lifetime));
 
         const bool color_lerp = (color_mode == ColorMode::LerpConstant || color_mode == ColorMode::LerpRandomRange);
         const bool scale_lerp = (scale_mode == ScaleMode::LerpConstant || scale_mode == ScaleMode::LerpRandomRange);
