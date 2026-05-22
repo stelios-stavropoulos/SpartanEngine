@@ -26,14 +26,44 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 //============================================
 
+#include "../../ParticleSystem/Emitter.h"
+
 namespace spartan
 {
-    class Emitter;
+    //class Emitter;
+
+    struct ParticleBenchmarkVariant
+    {
+        Emitter::LifetimeMode lifetime;
+        Emitter::ScaleMode scale;
+        Emitter::ColorMode color;
+        Emitter::VelocityMode velocity;
+    };
 
     class ParticleSystemCPU : public Component
     {
+
     public:
         std::vector<Emitter*> emitters;
+
+        bool benchmark_running = false;
+
+        std::vector<ParticleBenchmarkVariant> benchmark_variants;
+
+        uint32_t benchmark_variant_index = 0;
+
+        double benchmark_elapsed = 0.0;
+        double benchmark_sample_elapsed = 0.0;
+
+        uint64_t benchmark_sample_count = 0;
+
+        double benchmark_frame_ms_sum = 0.0;
+        double benchmark_system_ms_sum = 0.0;
+        double benchmark_update_ms_sum = 0.0;
+        double benchmark_kill_ms_sum = 0.0;
+        double benchmark_spawn_ms_sum = 0.0;
+
+        std::ofstream benchmark_file;
 
     public:
         ParticleSystemCPU(Entity* entity);
@@ -41,5 +71,11 @@ namespace spartan
 
         // icomponent
         void Tick() override;
+
+        void BenchmarkBegin(const std::string& path);
+        void BenchmarkTick(double dt);
+        void BenchmarkApplyVariant();
+        void BenchmarkWriteCurrent();
+        void BenchmarkResetAccumulators();
     };
 }

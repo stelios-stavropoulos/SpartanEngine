@@ -519,10 +519,13 @@ namespace spartan
     void Emitter::Update(const double& delta_time)
     {
         const float    dt = static_cast<float>(delta_time);
-        const uint64_t frame_id = Renderer::GetFrameNumber();
+        const uint64_t frame_id = 0;
+        //const uint64_t frame_id = Renderer::GetFrameNumber();
 
         // ---- Update ----
-        SP_PROFILE_CPU_START("CPU Particles Update")
+        //SP_PROFILE_CPU_START("CPU Particles Update")
+
+        auto t_update_begin = std::chrono::high_resolution_clock::now();
 
         EmitterUpdateContext uctx;
         uctx.data = &particle_data;
@@ -552,12 +555,16 @@ namespace spartan
                 update_func(0, static_cast<int32_t>(particle_data.alive_particle_count));
         }
 
-        SP_PROFILE_CPU_END()
+        //SP_PROFILE_CPU_END()
 
-            // ---- Kill ----
-            SP_PROFILE_CPU_START("CPU Particles Kill")
+        auto t_update_end = std::chrono::high_resolution_clock::now();
 
-            uint32_t i = 0;
+        // ---- Kill ----
+        //SP_PROFILE_CPU_START("CPU Particles Kill")
+
+        auto t_kill_begin = std::chrono::high_resolution_clock::now();
+
+        uint32_t i = 0;
         while (i < particle_data.alive_particle_count)
         {
             if (particle_data.normalized_lifetimes[i] >= 1.0f)
@@ -566,10 +573,13 @@ namespace spartan
                 ++i;
         }
 
-        SP_PROFILE_CPU_END()
+        //SP_PROFILE_CPU_END()
+        auto t_kill_end = std::chrono::high_resolution_clock::now();
 
         // ---- Spawn ----
-        SP_PROFILE_CPU_START("CPU Particles Spawn")
+        //SP_PROFILE_CPU_START("CPU Particles Spawn")
+
+        auto t_spawn_begin = std::chrono::high_resolution_clock::now();
 
         spawn_accumulator += dt * spawn_rate;
         uint32_t spawn_count = static_cast<uint32_t>(spawn_accumulator);
@@ -582,7 +592,26 @@ namespace spartan
             SpawnParticles(spawn_count, frame_id);
         }
 
-        SP_PROFILE_CPU_END()
+        //SP_PROFILE_CPU_END()
+
+        auto t_spawn_end = std::chrono::high_resolution_clock::now();
+
+        // ------------------------------------------------------------
+        // Benchmark metrics
+        // ------------------------------------------------------------
+
+        if (benchmark_mode)
+        {
+            benchmark_metrics.update_ms =
+                std::chrono::duration<double, std::milli>(t_update_end - t_update_begin).count();
+
+            benchmark_metrics.kill_ms =
+                std::chrono::duration<double, std::milli>(t_kill_end - t_kill_begin).count();
+
+            benchmark_metrics.spawn_ms =
+                std::chrono::duration<double, std::milli>(t_spawn_end - t_spawn_begin).count();
+        }
+
     }
 
     void Emitter::SpawnParticles(uint32_t count, uint64_t frame_id)
@@ -660,5 +689,56 @@ namespace spartan
 
         --particle_data.alive_particle_count;
     }
-    
+
+    void Emitter::ApplyBenchmarkVariant(
+        LifetimeMode lifetime,
+        ScaleMode scale,
+        ColorMode color,
+        VelocityMode velocity)
+    {
+        lifetime_mode = lifetime;
+        scale_mode = scale;
+        color_mode = color;
+        velocity_mode = velocity;
+
+        const bool color_lerp =
+            (
+                color_mode == ColorMode::LerpConstant ||
+                color_mode == ColorMode::LerpRandomRange
+                );
+
+        const bool scale_lerp =
+            (
+                scale_mode == ScaleMode::LerpConstant ||
+                scale_mode == ScaleMode::LerpRandomRange
+                );
+
+        // preserve capacity
+        const uint32_t capacity = particle_data.max_particle_count;
+
+        particle_data.Resize(capacity, color_lerp, scale_lerp);
+
+        renderable->SetParticleInstances(capacity);
+
+        RHI_Buffer* instances_buffer = renderable->GetInstanceBuffer();
+
+        if (instances_buffer)
+        {
+            buffer_data =
+                static_cast<ParticleInstance*>(instances_buffer->GetMappedData());
+        }
+
+        SelectHotPaths();
+        ResetParticles();
+
+    }
+
+    void Emitter::ResetParticles()
+    {
+        particle_data.alive_particle_count = 0;
+        spawn_accumulator = 0.0f;
+
+        benchmark_metrics.Reset();
+    }
+
 }

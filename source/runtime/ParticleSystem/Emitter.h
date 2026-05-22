@@ -29,6 +29,20 @@ namespace spartan
 {
     class Renderable;
 
+    struct BenchmarkMetrics
+    {
+        double update_ms = 0.0;
+        double kill_ms = 0.0;
+        double spawn_ms = 0.0;
+
+        void Reset()
+        {
+            update_ms = 0.0;
+            kill_ms = 0.0;
+            spawn_ms = 0.0;
+        }
+    };
+
     class Emitter
     {
     public:
@@ -47,9 +61,7 @@ namespace spartan
 
     public:
 
-        Renderable*       renderable  = nullptr;
-        ParticleInstance* buffer_data = nullptr;
-        ParticleData      particle_data;
+
 
         // Hot-path context structs
         struct EmitterUpdateContext
@@ -158,5 +170,26 @@ namespace spartan
 
         // Threading
         static constexpr uint32_t k_thread_threshold = 1024;
+
+
+
+        bool benchmark_mode = false;
+        uint64_t benchmark_seed = 0;
+        BenchmarkMetrics benchmark_metrics;
+
+        Renderable* renderable = nullptr;
+        ParticleInstance* buffer_data = nullptr;
+        ParticleData      particle_data;
+
+    public:
+        void ApplyBenchmarkVariant(
+            LifetimeMode lifetime,
+            ScaleMode scale,
+            ColorMode color,
+            VelocityMode velocity
+        );
+
+        void ResetParticles();
+
 };
 }

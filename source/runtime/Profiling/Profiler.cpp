@@ -63,7 +63,7 @@ namespace spartan
         // profiling
         const uint32_t max_timeblocks  = 256;
         bool profile_cpu               = true;
-        bool profile_gpu               = true;
+        bool profile_gpu               = false;
         float profiling_interval_sec   = 0.25f;
         float time_since_profiling_sec = profiling_interval_sec;
 
